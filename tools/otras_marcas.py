@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""
+otras_marcas.py — Datos del panel Otras marcas (indice.json, meses/*.json).
+
+Para cada mes arma la venta y la cobertura de las marcas que no son Pepsico ni
+Georgalos, contra un objetivo que es lo vendido el mes anterior:
+
+    meses/AAAA-MM.json               marcas (con submarcas), vendedores por
+                                     marca y los dias habiles del mes
+    indice.json                      meses disponibles y hora de actualizacion
+    fecha.txt                        fecha de actualizacion, para la tarjeta del portal
+
+Criterios (los mismos del cuadro que se armo a mano el 2/11/2026):
+
+    venta      importe neto sin IVA, por FECHA DE ENTREGA del mes. VEN y DEB
+               suman, todo lo demas (devoluciones) resta.
+    objetivo   la venta del mes anterior, con el mismo criterio.
+    cobertura  clientes con compra neta positiva de la marca en el mes. El
+               total cuenta cada cliente una sola vez.
+    ritmo      dias habiles (lunes a sabado, sin feriados) transcurridos sobre
+               los del mes.
+
+Las marcas salen del proveedor del articulo (catalogo de la base), salvo:
+    - Pilaga (proveedor 142): las tostadas (codigoMarca 25) son PILAGA y el
+      arroz Molinos Ala es ADECO AGRO.
+    - LCB son dos proveedores: Tayal (517) e Hileret (10, Lagopuelo).
+    - Softys se abre en submarcas por la descripcion.
+
+Fuente: la base propia de Gescom (https://base.tienda-perfecta.workers.dev,
+secreto BASE_CLAVE), /api/lineas-proveedor por fecha de entrega. No le pide
+nada a Gescom.
+
+Uso:
+    python tools/otras_marcas.py                 mes en curso (y el anterior
+                                                 los primeros 7 dias)
+    python tools/otras_marcas.py 2026-09 2026-10 esos meses
+"""
+import calendar
+import datetime as dt
+import json
+import os
+import sys
+import time
+from collections import defaultdict
+from pathlib import Path
+
+import requests
+
+DIR = Path(__file__).resolve().parent.parent   # raiz del repo: ahi lee la pagina
+BASE = "https://base.tienda-perfecta.workers.dev"
+TZ_AR = dt.timezone(dt.timedelta(hours=-3))
+PRIMER_MES = "2026-09"   # la base tiene datos desde el 1/8/2026: el primer objetivo es agosto
+
+# Orden en que se muestran (el del pedido del 2/11/2026).
+MARCAS = ["PILAGA", "ADECO AGRO", "LCB", "ENTRENUTS", "SOFTYS", "SAN HUBERTO", "CASTELL",
+          "CELUSAL", "MENOYO", "ECOVITA", "FECOVITA", "HARINAS CHACABUCO", "LA QUESERA"]
+PROVEEDORES = {
+    "142": None,              # PILAGA / ADECO AGRO, segun codigoMarca
+    "517": "LCB", "10": "LCB",
+    "361": "ENTRENUTS", "443": "SOFTYS", "422": "SAN HUBERTO", "547": "CASTELL",
+    "607": "CELUSAL", "603": "MENOYO", "351": "ECOVITA", "495": "FECOVITA",
+    "359": "HARINAS CHACABUCO", "94": "LA QUESERA",
+}
+SUMAN = {"VEN", "DEB"}
+
+
+def cod(x):
+    return "" if x is None else str(x).strip()
+
+
+def base_get(ruta, **params):
+    for intento in range(3):
+        try:
+            r = requests.get(BASE + ruta, params=params, timeout=240,
+                             headers={"x-clave": os.environ["BASE_CLAVE"].strip()})
+            if r.status_code < 500:
+                break
+        except requests.ConnectionError:
+            if intento == 2:
+                raise
+        time.sleep(10 * (intento + 1))
+    r.raise_for_status()
+    return r.json()
+
+
+def marca_de(art):
+    prov = cod(art.get("codigoProveedor"))
+    if prov == "142":
+        return "PILAGA" if cod(art.get("codigoMarca")) == "25" else "ADECO AGRO"
+    return PROVEEDORES.get(prov)
+
+
+def submarca_de(art):
+    prov = cod(art.get("codigoProveedor"))
+    if prov == "517":
+        return "Tayal"
+    if prov == "10":
+        return "Hileret"
+    if prov != "443":
+        return None
+    d = (art.get("descripcion") or "").upper()
+    for clave, nombre in (("BABYSEC", "Babysec"), ("HIGI", "Higienol"), ("COTIDIAN", "Cotidian"),
+                          ("ELITE", "Elite"), ("SUSSEX", "Sussex")):
+        if clave in d:
+            return nombre
+    if d[:3] in ("TF ", "PD ") or "LADYSOFT" in d:
+        return "Ladysoft"
+    return "Otros Softys"
+
+
+def articulos():
+    """(codigo, empresa) -> articulo de los proveedores del panel. La empresa 99 usa los de la 1."""
+    arts = {}
+    for a in base_get("/api/catalogo/articulos"):
+        if cod(a.get("codigoProveedor")) in PROVEEDORES:
+            arts[(cod(a.get("codigo")), cod(a.get("codigoEmpresa")))] = a
+    return arts
+
+
+def mes_anterior(ym):
+    y, m = map(int, ym.split("-"))
+    return f"{y - 1}-12" if m == 1 else f"{y}-{m - 1:02d}"
+
+
+def habiles(ym, hoy):
+    y, m = map(int, ym.split("-"))
+    dias = [dt.date(y, m, d) for d in range(1, calendar.monthrange(y, m)[1] + 1)]
+    lab = [d for d in dias if d.weekday() != 6]
+    return len(lab), sum(1 for d in lab if d <= hoy)
+
+
+def fila(objetivo, venta, cob_obj, cob_act):
+    objetivo, venta = round(objetivo), round(venta)
+    return {
+        "objetivo": objetivo, "venta": venta,
+        "cumpl": round(venta / objetivo, 4) if objetivo > 0 else None,
+        "falta": max(objetivo - venta, 0),
+        "cob_obj": cob_obj, "cob_act": cob_act,
+        "cumpl_cob": round(cob_act / cob_obj, 4) if cob_obj > 0 else None,
+        "faltan_cli": max(cob_obj - cob_act, 0),
+    }
+
+
+def resumir(neto_por_cli):
+    """{(per, cli): neto} -> objetivo, venta, cobertura objetivo y actual."""
+    obj = sum(n for (p, _), n in neto_por_cli.items() if p == "obj")
+    act = sum(n for (p, _), n in neto_por_cli.items() if p == "act")
+    cob_obj = sum(1 for (p, _), n in neto_por_cli.items() if p == "obj" and n > 0)
+    cob_act = sum(1 for (p, _), n in neto_por_cli.items() if p == "act" and n > 0)
+    return fila(obj, act, cob_obj, cob_act)
+
+
+def armar_mes(ym, hoy, arts, vendedores, datos_al):
+    ant = mes_anterior(ym)
+    desde = f"{ant}-01"
+    y, m = map(int, ym.split("-"))
+    hasta = f"{ym}-{calendar.monthrange(y, m)[1]:02d}"
+
+    # neto por (marca, submarca, vendedor, periodo, cliente)
+    acc = defaultdict(float)
+    for prov in PROVEEDORES:
+        for l in base_get("/api/lineas-proveedor", proveedor=prov, desde=desde, hasta=hasta, por="entrega"):
+            emp = cod(l.get("emp"))
+            art = arts.get((cod(l.get("item")), "1" if emp == "99" else emp))
+            # el endpoint junta articulos por codigo sin empresa: se confirma el proveedor aca
+            if not art or cod(art.get("codigoProveedor")) != prov:
+                continue
+            per = "act" if (l.get("fe") or "")[:7] == ym else "obj"
+            neto = float(l.get("neto") or 0) * (1 if l.get("tipo") in SUMAN else -1)
+            acc[(marca_de(art), submarca_de(art), cod(l.get("ven")), per, cod(l.get("cli")))] += neto
+
+    def juntar(clave):
+        g = defaultdict(lambda: defaultdict(float))
+        for (marca, sub, ven, per, cli), n in acc.items():
+            k = clave(marca, sub, ven)
+            if k is not None:
+                g[k][(per, cli)] += n
+        return g
+
+    por_marca = juntar(lambda marca, sub, ven: marca)
+    por_sub = juntar(lambda marca, sub, ven: (marca, sub) if sub else None)
+    total = juntar(lambda marca, sub, ven: "TOTAL")
+    por_ven = juntar(lambda marca, sub, ven: (ven, marca))
+    ven_total = juntar(lambda marca, sub, ven: (ven, "TOTAL"))
+
+    vacia = fila(0, 0, 0, 0)
+    marcas = []
+    for i, marca in enumerate(MARCAS, 1):
+        marcas.append({"marca": marca, "sub": "Total", "orden": i,
+                       **(resumir(por_marca[marca]) if marca in por_marca else vacia)})
+        subs = [{"marca": marca, "sub": s, "orden": i, **resumir(v)} for (mm, s), v in por_sub.items() if mm == marca]
+        marcas += sorted(subs, key=lambda r: -r["objetivo"])
+    marcas.append({"marca": "TOTAL", "sub": "Total", "orden": 99, **(resumir(total["TOTAL"]) if total else vacia)})
+
+    vend = []
+    for (ven, marca), v in list(por_ven.items()) + list(ven_total.items()):
+        vend.append({"ven": ven, "vendedor": vendedores.get(ven) or f"Vendedor {ven}", "marca": marca, **resumir(v)})
+    vend.sort(key=lambda r: (r["marca"], -r["objetivo"]))
+
+    hab_mes, hab_hoy = habiles(ym, hoy)
+    return {
+        "mes": ym, "mes_ant": ant, "hoy": hoy.isoformat(),
+        "habiles_mes": hab_mes, "habiles_hasta_hoy": hab_hoy, "datos_al": datos_al,
+        "marcas": marcas, "vendedores": vend,
+    }
+
+
+def main(args):
+    if not os.environ.get("BASE_CLAVE", "").strip():
+        print("Falta el secreto BASE_CLAVE: no se puede leer la base; se dejan los JSON anteriores sin tocar.")
+        return
+    hoy = dt.datetime.now(TZ_AR).date()
+    actual = hoy.strftime("%Y-%m")
+    meses = args or ([mes_anterior(actual)] if hoy.day <= 7 else []) + [actual]
+    meses = [m for m in meses if PRIMER_MES <= m <= actual]
+
+    arts = articulos()
+    vendedores = {cod(v.get("codigo")): (v.get("nombre") or "").strip() for v in base_get("/api/catalogo/vendedores")}
+    corridas = base_get("/api/estado").get("corridas") or []
+    datos_al = max((c.get("inicio") or "" for c in corridas if c.get("estado") == "ok"), default=None)
+
+    (DIR / "meses").mkdir(parents=True, exist_ok=True)
+    for ym in meses:
+        datos = armar_mes(ym, hoy, arts, vendedores, datos_al)
+        (DIR / "meses" / f"{ym}.json").write_text(json.dumps(datos, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        t = next(r for r in datos["marcas"] if r["marca"] == "TOTAL")
+        print(f"{ym}: objetivo {t['objetivo']:,} venta {t['venta']:,} cobertura {t['cob_act']}/{t['cob_obj']}")
+
+    disponibles = sorted((p.stem for p in (DIR / "meses").glob("*.json")), reverse=True)
+    indice = {"meses": disponibles, "actualizado": dt.datetime.now(TZ_AR).isoformat(timespec="minutes")}
+    (DIR / "indice.json").write_text(json.dumps(indice, ensure_ascii=False, indent=1), encoding="utf-8")
+    (DIR / "fecha.txt").write_text(f"Ultima actualizacion: {hoy.isoformat()}\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
