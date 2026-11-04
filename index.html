@@ -124,10 +124,17 @@ td.sep, th.sep{width:14px; padding:0}
 .stack span{display:block; height:100%}
 .c-e1{background:var(--e1)} .c-e2{background:var(--e2)} .c-e99{background:var(--e99)}
 .dot.c-e1{background:var(--e1)} .dot.c-e2{background:var(--e2)} .dot.c-e99{background:var(--e99)}
-tbody td.dia{text-align:left; font-family:"IBM Plex Sans"; font-weight:600; text-transform:capitalize}
+tbody td.dia{text-align:left; font-family:"IBM Plex Sans"; font-weight:600}
+tbody td.dia::first-letter{text-transform:uppercase}
 tr.total td.dia{text-transform:uppercase; letter-spacing:.03em}
 .fact{min-width:820px}
 td .pct{display:block; font-size:11px; color:var(--muted); margin-top:2px}
+.seg{display:flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--panel-2)}
+.seg button{font:600 13px "IBM Plex Sans"; color:var(--muted); background:transparent; border:0; padding:8px 14px; min-height:36px; cursor:pointer}
+.seg button + button{border-left:1px solid var(--border)}
+.seg button[aria-pressed="true"]{background:var(--accent); color:var(--panel)}
+.seg button:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
+tr.sel td{background:var(--accent-soft)}
 </style>
 </head>
 <body>
@@ -347,63 +354,151 @@ function refTexto() {
   return n(r[0]).replace(/ de \d{4}$/, '') + ' a ' + n(r[r.length - 1]);
 }
 
-// Facturacion total por empresa (todas las marcas), del mes y por dia de carga.
+// Facturacion total (todas las marcas) por empresa y por vendedor, del dia, la semana o el mes.
+// datos.facturacion.filas = [fecha, vendedor, empresa, monto].
+let fAgr = 'mes', fPer = null;
+const fPct1 = (x) => (x == null || !isFinite(x) ? '—' : (x * 100).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' %');
+const diaCorto = (f) => new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'numeric' });
+const ddmm = (f) => `${+f.slice(8, 10)}/${+f.slice(5, 7)}`;
+const iso = (d) => d.toISOString().slice(0, 10);
+
+// Clave del periodo de una fecha: el dia, el lunes de su semana o el mes.
+function periodoDe(f, agr) {
+  if (agr === 'dia') return f;
+  if (agr === 'mes') return f.slice(0, 7);
+  const d = new Date(f + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return iso(d);
+}
+function nombrePeriodo(k, agr) {
+  if (agr === 'dia') return diaCorto(k);
+  if (agr === 'mes') return nombreMes(k);
+  const fin = new Date(k + 'T12:00:00Z');
+  fin.setUTCDate(fin.getUTCDate() + 6);
+  const ini = k.slice(0, 7) < datos.mes ? datos.mes + '-01' : k;
+  let f2 = iso(fin);
+  if (f2.slice(0, 7) > datos.mes) f2 = iso(new Date(Date.UTC(+datos.mes.slice(0, 4), +datos.mes.slice(5, 7), 0)));
+  return ini === f2 ? `Semana del ${ddmm(ini)}` : `Semana del ${ddmm(ini)} al ${ddmm(f2)}`;
+}
+
+// Suma las filas por clave: {clave: {emp: monto, total}}.
+function sumar(filas, clave) {
+  const out = {};
+  filas.forEach(([f, ven, emp, n]) => {
+    const k = clave(f, ven, emp);
+    const o = out[k] || (out[k] = { total: 0 });
+    o[emp] = (o[emp] || 0) + n;
+    o.total += n;
+  });
+  return out;
+}
+
 function vistaFacturacion() {
   const v = document.getElementById('vista');
   const f = datos.facturacion;
-  if (!f) { v.replaceChildren(el('p', 'vacio', 'Todavía no hay facturación cargada para este mes.')); return; }
-  const fPct1 = (x) => (x == null ? '—' : (x * 100).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' %');
+  if (!f || !f.filas) { v.replaceChildren(el('p', 'vacio', 'Todavía no hay facturación cargada para este mes.')); return; }
+  const emps = f.empresas;
+  const porPer = sumar(f.filas, (fe) => periodoDe(fe, fAgr));
+  const pers = Object.keys(porPer).sort().reverse();
+  if (!pers.includes(fPer)) fPer = pers[0] || null;
+  const filasPer = f.filas.filter(([fe]) => periodoDe(fe, fAgr) === fPer);
+  const tot = porPer[fPer] || { total: 0 };
+  const nomAgr = { dia: 'día', semana: 'semana', mes: 'mes' }[fAgr];
+
+  // elegir dia / semana / mes y el periodo
+  const ctl = el('div', 'filtros');
+  const seg = el('div', 'seg');
+  [['dia', 'Día'], ['semana', 'Semana'], ['mes', 'Mes']].forEach(([k, n]) => {
+    const bt = el('button', null, n);
+    bt.setAttribute('aria-pressed', String(k === fAgr));
+    bt.addEventListener('click', () => { fAgr = k; fPer = null; vistaFacturacion(); });
+    seg.append(bt);
+  });
+  const lv = el('label', null, 'Ver por');
+  lv.append(seg);
+  ctl.append(lv);
+  if (fAgr !== 'mes') {
+    const lp = el('label', null, fAgr === 'dia' ? 'Día' : 'Semana');
+    const sel = el('select');
+    pers.forEach((k) => sel.append(new Option(nombrePeriodo(k, fAgr), k)));
+    sel.value = fPer;
+    sel.addEventListener('change', () => { fPer = sel.value; vistaFacturacion(); });
+    lp.append(sel);
+    ctl.append(lp);
+  }
+
   const cards = el('div', 'kpis');
-  cards.append(kpi('Total del mes', money.format(f.total), ['Las tres empresas, ', b(f.dias.length + ' días'), ' con carga'], 'accent'));
-  f.empresas.forEach((e) => {
-    const k = kpi(e.nombre, money.format(e.total), [fPct1(e.pct) + ' del mes']);
-    const bar = el('div', 'emp-bar'); const s = el('span', 'c-e' + e.emp);
-    s.style.width = Math.max(0, Math.min(1, e.pct || 0)) * 100 + '%';
-    bar.append(s); k.append(bar); cards.append(k);
+  cards.append(kpi('Total ' + (fAgr === 'semana' ? 'de la semana' : 'del ' + nomAgr), money.format(tot.total),
+    [fAgr === 'mes' ? 'Las tres empresas' : fPct1(tot.total / f.total) + ' del mes'], 'accent'));
+  emps.forEach((e) => {
+    const k = kpi(e.nombre, money.format(tot[e.emp] || 0), [fPct1((tot[e.emp] || 0) / tot.total) + ' del total']);
+    const bar = el('div', 'emp-bar');
+    const s = el('span', 'c-e' + e.emp);
+    s.style.width = (tot.total > 0 ? Math.max(0, Math.min(1, (tot[e.emp] || 0) / tot.total)) * 100 : 0) + '%';
+    bar.append(s);
+    k.append(bar);
+    cards.append(k);
   });
 
-  const sc = el('div', 'table-scroll tall');
-  const t = el('table', 'fact');
-  const th = el('thead'), hr = el('tr', 'cols');
-  hr.append(el('th', 'name-col', 'Día'));
-  f.empresas.forEach((e) => hr.append(el('th', null, e.nombre)));
-  hr.append(el('th', null, 'Total'), el('th', 'hide-sm', 'Reparto'));
-  th.append(hr);
-  const tb = el('tbody');
-  const fila = (nombre, d, cls) => {
-    const tr = el('tr', cls || '');
-    tr.append(el('td', 'dia', nombre));
-    // cada empresa con su % del dia; el total del dia con su % del mes
-    const celda = (monto, base) => {
-      const td = el('td', null, money.format(monto));
-      td.append(el('span', 'pct', base ? fPct1(monto / base) : '—'));
+  // tabla: nombre | empresas (con su % de la fila) | total (con su % de la base) | reparto
+  function tablaFact(primera, filas, base) {
+    const sc = el('div', 'table-scroll tall');
+    const t = el('table', 'fact');
+    const th = el('thead'), hr = el('tr', 'cols');
+    hr.append(el('th', 'name-col', primera));
+    emps.forEach((e) => hr.append(el('th', null, e.nombre)));
+    hr.append(el('th', null, 'Total'), el('th', 'hide-sm', 'Reparto'));
+    th.append(hr);
+    const tb = el('tbody');
+    const celda = (monto, b2) => {
+      const td = el('td', null, money.format(monto || 0));
+      td.append(el('span', 'pct', b2 ? fPct1((monto || 0) / b2) : '—'));
       return td;
     };
-    f.empresas.forEach((e) => tr.append(celda(d[e.emp], d.total)));
-    tr.append(celda(d.total, f.total));
-    const td = el('td', 'hide-sm'), st = el('div', 'stack');
-    f.empresas.forEach((e) => {
-      const s = el('span', 'c-e' + e.emp);
-      s.style.width = (d.total > 0 ? Math.max(0, d[e.emp]) / d.total * 100 : 0) + '%';
-      st.append(s);
+    filas.forEach(({ nombre, d, cls, onClick }) => {
+      const tr = el('tr', cls || '');
+      if (onClick) { tr.classList.add('link'); tr.addEventListener('click', onClick); }
+      tr.append(el('td', 'dia', nombre));
+      emps.forEach((e) => tr.append(celda(d[e.emp], d.total)));
+      tr.append(celda(d.total, base));
+      const td = el('td', 'hide-sm'), st = el('div', 'stack');
+      emps.forEach((e) => {
+        const s = el('span', 'c-e' + e.emp);
+        s.style.width = (d.total > 0 ? Math.max(0, d[e.emp] || 0) / d.total * 100 : 0) + '%';
+        st.append(s);
+      });
+      td.append(st);
+      tr.append(td);
+      tb.append(tr);
     });
-    td.append(st); tr.append(td);
-    tb.append(tr);
-  };
-  const tot = { total: f.total };
-  f.empresas.forEach((e) => { tot[e.emp] = e.total; });
-  fila('Total del mes', tot, 'total');
-  [...f.dias].reverse().forEach((d) => fila(
-    new Date(d.fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'numeric' }), d));
-  t.append(th, tb); sc.append(t);
+    t.append(th, tb);
+    sc.append(t);
+    return sc;
+  }
+
+  const porVen = sumar(filasPer, (fe, ven) => ven);
+  const vend = Object.entries(porVen).sort((a, b2) => b2[1].total - a[1].total)
+    .map(([ven, d]) => ({ nombre: f.nombres[ven] || 'Vendedor ' + ven, d }));
+  vend.unshift({ nombre: 'Total', d: tot, cls: 'total' });
+
+  // evolucion: los dias (en dia y mes) o las semanas del mes; tocando una fila se elige
+  const agrEv = fAgr === 'semana' ? 'semana' : 'dia';
+  const porEv = sumar(f.filas, (fe) => periodoDe(fe, agrEv));
+  const ev = Object.keys(porEv).sort().reverse().map((k) => ({
+    nombre: nombrePeriodo(k, agrEv), d: porEv[k], cls: fAgr !== 'mes' && k === fPer ? 'sel' : '',
+    onClick: () => { fAgr = agrEv; fPer = k; vistaFacturacion(); },
+  }));
 
   const ley = el('div', 'legend');
-  f.empresas.forEach((e) => { const s = el('span'); s.append(el('i', 'dot c-e' + e.emp), e.nombre); ley.append(s); });
-  const h = encabezado('Por día', 'Cada día es la fecha de carga del pedido. Debajo de cada empresa, su % de lo facturado ese día; debajo del total, cuánto pesa el día en el mes.');
-  h.append(ley);
+  emps.forEach((e) => { const s = el('span'); s.append(el('i', 'dot c-e' + e.emp), e.nombre); ley.append(s); });
+  const hv = encabezado('Por vendedor · ' + (fPer ? nombrePeriodo(fPer, fAgr) : ''),
+    'Debajo de cada empresa, su % de lo que facturó el vendedor; debajo del total, su % del ' + (fAgr === 'semana' ? 'total de la semana' : nomAgr) + '.');
+  hv.append(ley);
   v.replaceChildren(
-    encabezado('Facturación por empresa', 'Todas las marcas, no solo estas: importe total con IVA, ventas menos devoluciones, por fecha de carga. La suma de las tres da el total del mes.'),
-    cards, h, sc);
+    encabezado('Facturación por empresa', 'Todas las marcas, no solo estas: importe total con IVA, ventas menos devoluciones, por fecha de carga. Elegí si la querés ver por día, por semana o el mes entero.'),
+    ctl, cards, hv, tablaFact('Vendedor', vend, tot.total),
+    encabezado(agrEv === 'dia' ? 'Por día' : 'Por semana', 'Debajo de cada empresa, su % de ' + (agrEv === 'dia' ? 'ese día' : 'esa semana') + '; debajo del total, cuánto pesa en el mes. Tocá una fila para ver sus vendedores.'),
+    tablaFact(agrEv === 'dia' ? 'Día' : 'Semana', ev, f.total));
 }
 
 function dibujar() {

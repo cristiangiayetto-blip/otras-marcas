@@ -174,25 +174,28 @@ def resumir(neto_por_cli, n_ref):
     return fila(obj, act, cob_obj, cob_act)
 
 
-def facturacion(ym):
-    """Facturacion total (todas las marcas) por empresa y por dia de carga del mes ym."""
+def facturacion(ym, vendedores):
+    """Facturacion total (todas las marcas) del mes ym por dia de carga, vendedor y empresa.
+    filas = [fecha, vendedor, empresa, monto]: la pagina arma con eso el dia, la semana o el mes."""
     y, m = map(int, ym.split("-"))
     ult = calendar.monthrange(y, m)[1]
-    por_dia = defaultdict(lambda: defaultdict(float))
+    acc = defaultdict(float)
     # de a una semana: /api/ventas devuelve el JSON entero de cada comprobante
     for d1 in range(1, ult + 1, 7):
         desde, hasta = f"{ym}-{d1:02d}", f"{ym}-{min(d1 + 6, ult):02d}"
         for v in base_get("/api/ventas", desde=desde, hasta=hasta, por="pedido"):
             tipo = cod(v.get("codigoTipoVenta"))
             signo = 1 if tipo in SUMAN else -1 if tipo.startswith("DEV") else 0
-            if signo:
-                por_dia[(v.get("fechaPedido") or "")[:10]][cod(v.get("codigoEmpresa"))] += signo * float(v.get("importeTotal") or 0)
-    dias = [{"fecha": f, **{e: round(por_dia[f].get(e, 0)) for e, _ in EMPRESAS},
-             "total": round(sum(por_dia[f].get(e, 0) for e, _ in EMPRESAS))} for f in sorted(por_dia) if f[:7] == ym]
-    total = sum(d["total"] for d in dias)
-    empresas = [{"emp": e, "nombre": n, "total": sum(d[e] for d in dias),
-                 "pct": round(sum(d[e] for d in dias) / total, 4) if total else None} for e, n in EMPRESAS]
-    return {"total": total, "empresas": empresas, "dias": dias}
+            fecha = (v.get("fechaPedido") or "")[:10]
+            if signo and fecha[:7] == ym:
+                acc[(fecha, cod(v.get("codigoVendedor")), cod(v.get("codigoEmpresa")))] += signo * float(v.get("importeTotal") or 0)
+    filas = [[f, ven, e, round(n)] for (f, ven, e), n in sorted(acc.items()) if round(n)]
+    total = sum(f[3] for f in filas)
+    empresas = [{"emp": e, "nombre": n, "total": sum(f[3] for f in filas if f[2] == e)} for e, n in EMPRESAS]
+    for e in empresas:
+        e["pct"] = round(e["total"] / total, 4) if total else None
+    nombres = {ven: vendedores.get(ven) or f"Vendedor {ven}" for ven in sorted({f[1] for f in filas})}
+    return {"total": total, "empresas": empresas, "filas": filas, "nombres": nombres}
 
 
 def armar_mes(ym, hoy, arts, vendedores, datos_al):
@@ -254,7 +257,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
     return {
         "mes": ym, "mes_ant": ref[-1], "meses_ref": ref, "hoy": hoy.isoformat(),
         "habiles_mes": hab_mes, "habiles_hasta_hoy": hab_hoy, "datos_al": datos_al,
-        "marcas": marcas, "vendedores": vend, "facturacion": facturacion(ym),
+        "marcas": marcas, "vendedores": vend, "facturacion": facturacion(ym, vendedores),
     }
 
 
