@@ -126,7 +126,8 @@ td.sep, th.sep{width:14px; padding:0}
 .dot.c-e1{background:var(--e1)} .dot.c-e2{background:var(--e2)} .dot.c-e99{background:var(--e99)}
 tbody td.dia{text-align:left; font-family:"IBM Plex Sans"; font-weight:600; text-transform:capitalize}
 tr.total td.dia{text-transform:uppercase; letter-spacing:.03em}
-.fact{min-width:720px}
+.fact{min-width:820px}
+td .pct{display:block; font-size:11px; color:var(--muted); margin-top:2px}
 </style>
 </head>
 <body>
@@ -351,11 +352,11 @@ function vistaFacturacion() {
   const v = document.getElementById('vista');
   const f = datos.facturacion;
   if (!f) { v.replaceChildren(el('p', 'vacio', 'Todavía no hay facturación cargada para este mes.')); return; }
-  const fPct1 = (x) => (x == null ? '—' : (x * 100).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' % del mes');
+  const fPct1 = (x) => (x == null ? '—' : (x * 100).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' %');
   const cards = el('div', 'kpis');
   cards.append(kpi('Total del mes', money.format(f.total), ['Las tres empresas, ', b(f.dias.length + ' días'), ' con carga'], 'accent'));
   f.empresas.forEach((e) => {
-    const k = kpi(e.nombre, money.format(e.total), [fPct1(e.pct)]);
+    const k = kpi(e.nombre, money.format(e.total), [fPct1(e.pct) + ' del mes']);
     const bar = el('div', 'emp-bar'); const s = el('span', 'c-e' + e.emp);
     s.style.width = Math.max(0, Math.min(1, e.pct || 0)) * 100 + '%';
     bar.append(s); k.append(bar); cards.append(k);
@@ -372,8 +373,14 @@ function vistaFacturacion() {
   const fila = (nombre, d, cls) => {
     const tr = el('tr', cls || '');
     tr.append(el('td', 'dia', nombre));
-    f.empresas.forEach((e) => tr.append(el('td', null, money.format(d[e.emp]))));
-    tr.append(el('td', null, money.format(d.total)));
+    // cada empresa con su % del dia; el total del dia con su % del mes
+    const celda = (monto, base) => {
+      const td = el('td', null, money.format(monto));
+      td.append(el('span', 'pct', base ? fPct1(monto / base) : '—'));
+      return td;
+    };
+    f.empresas.forEach((e) => tr.append(celda(d[e.emp], d.total)));
+    tr.append(celda(d.total, f.total));
     const td = el('td', 'hide-sm'), st = el('div', 'stack');
     f.empresas.forEach((e) => {
       const s = el('span', 'c-e' + e.emp);
@@ -392,7 +399,7 @@ function vistaFacturacion() {
 
   const ley = el('div', 'legend');
   f.empresas.forEach((e) => { const s = el('span'); s.append(el('i', 'dot c-e' + e.emp), e.nombre); ley.append(s); });
-  const h = encabezado('Por día', 'Cada día es la fecha de carga del pedido. Arriba, el más reciente.');
+  const h = encabezado('Por día', 'Cada día es la fecha de carga del pedido. Debajo de cada empresa, su % de lo facturado ese día; debajo del total, cuánto pesa el día en el mes.');
   h.append(ley);
   v.replaceChildren(
     encabezado('Facturación por empresa', 'Todas las marcas, no solo estas: importe total con IVA, ventas menos devoluciones, por fecha de carga. La suma de las tres da el total del mes.'),
