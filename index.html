@@ -357,6 +357,7 @@ function refTexto() {
 // Facturacion total (todas las marcas) por empresa y por vendedor, del dia, la semana o el mes.
 // datos.facturacion.filas = [fecha, vendedor, empresa, monto].
 let fAgr = 'mes', fPer = null;
+const SIN_TABLA = ['20', '31'];   // Deposito, FLOR
 const fPct1 = (x) => (x == null || !isFinite(x) ? '—' : (x * 100).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' %');
 const diaCorto = (f) => new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'numeric' });
 const ddmm = (f) => `${+f.slice(8, 10)}/${+f.slice(5, 7)}`;
@@ -477,28 +478,19 @@ function vistaFacturacion() {
   }
 
   const porVen = sumar(filasPer, (fe, ven) => ven);
-  const vend = Object.entries(porVen).sort((a, b2) => b2[1].total - a[1].total)
+  // Deposito y FLOR no son vendedores de calle: no van en la tabla, pero si en el total
+  const vend = Object.entries(porVen).filter(([ven]) => !SIN_TABLA.includes(ven)).sort((a, b2) => b2[1].total - a[1].total)
     .map(([ven, d]) => ({ nombre: f.nombres[ven] || 'Vendedor ' + ven, d }));
   vend.unshift({ nombre: 'Total', d: tot, cls: 'total' });
-
-  // evolucion: los dias (en dia y mes) o las semanas del mes; tocando una fila se elige
-  const agrEv = fAgr === 'semana' ? 'semana' : 'dia';
-  const porEv = sumar(f.filas, (fe) => periodoDe(fe, agrEv));
-  const ev = Object.keys(porEv).sort().reverse().map((k) => ({
-    nombre: nombrePeriodo(k, agrEv), d: porEv[k], cls: fAgr !== 'mes' && k === fPer ? 'sel' : '',
-    onClick: () => { fAgr = agrEv; fPer = k; vistaFacturacion(); },
-  }));
 
   const ley = el('div', 'legend');
   emps.forEach((e) => { const s = el('span'); s.append(el('i', 'dot c-e' + e.emp), e.nombre); ley.append(s); });
   const hv = encabezado('Por vendedor · ' + (fPer ? nombrePeriodo(fPer, fAgr) : ''),
-    'Debajo de cada empresa, su % de lo que facturó el vendedor; debajo del total, su % del ' + (fAgr === 'semana' ? 'total de la semana' : nomAgr) + '.');
+    'Debajo de cada empresa, su % de lo que facturó el vendedor; debajo del total, su % del ' + (fAgr === 'semana' ? 'total de la semana' : nomAgr) + '. El total incluye lo cargado por Depósito.');
   hv.append(ley);
   v.replaceChildren(
     encabezado('Facturación por empresa', 'Todas las marcas, no solo estas: importe total con IVA, ventas menos devoluciones, por fecha de carga. Elegí si la querés ver por día, por semana o el mes entero.'),
-    ctl, cards, hv, tablaFact('Vendedor', vend, tot.total),
-    encabezado(agrEv === 'dia' ? 'Por día' : 'Por semana', 'Debajo de cada empresa, su % de ' + (agrEv === 'dia' ? 'ese día' : 'esa semana') + '; debajo del total, cuánto pesa en el mes. Tocá una fila para ver sus vendedores.'),
-    tablaFact(agrEv === 'dia' ? 'Día' : 'Semana', ev, f.total));
+    ctl, cards, hv, tablaFact('Vendedor', vend, tot.total));
 }
 
 function dibujar() {
