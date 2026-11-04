@@ -56,6 +56,8 @@ TZ_AR = dt.timezone(dt.timedelta(hours=-3))
 PRIMER_DATO = "2026-08"  # la base tiene datos desde el 1/8/2026
 PRIMER_MES = "2026-09"   # primer mes con al menos un mes de referencia
 MESES_OBJETIVO = 3       # meses que se promedian para el objetivo
+# No son vendedores de calle: no van en las tablas por vendedor (su venta si cuenta en las marcas).
+SIN_TABLA = {"20", "31"}   # Deposito, FLOR
 
 # Orden en que se muestran (el del pedido del 2/11/2026).
 MARCAS = ["PILAGA", "ADECO AGRO", "LCB", "ENTRENUTS", "SOFTYS", "SAN HUBERTO", "CASTELL",
@@ -215,7 +217,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
 
     # todos los vendedores en todas las marcas, aunque no la vendan
     vend = []
-    for ven in sorted({ven for (ven, _) in ven_total}, key=lambda v: (len(v), v)):
+    for ven in sorted({ven for (ven, _) in ven_total} - SIN_TABLA, key=lambda v: (len(v), v)):
         for marca in MARCAS + ["TOTAL"]:
             v = (ven_total if marca == "TOTAL" else por_ven).get((ven, marca))
             vend.append({"ven": ven, "vendedor": vendedores.get(ven) or f"Vendedor {ven}", "marca": marca,
