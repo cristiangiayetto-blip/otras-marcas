@@ -6,7 +6,8 @@ Para cada mes arma la venta y la cobertura de las marcas que no son Pepsico ni
 Georgalos, contra un objetivo que es lo vendido el mes anterior:
 
     meses/AAAA-MM.json               marcas (con submarcas), vendedores por
-                                     marca y los dias habiles del mes
+                                     marca, los dias habiles del mes y la
+                                     facturacion total por empresa y por dia
     indice.json                      meses disponibles y hora de actualizacion
     fecha.txt                        fecha de actualizacion, para la tarjeta del portal
 
@@ -23,6 +24,9 @@ Criterios:
                marcas en el mes o en los de referencia, aunque sea en cero.
     ritmo      dias habiles (lunes a sabado, sin feriados) transcurridos sobre
                los del mes.
+    facturacion todas las marcas, no solo estas: importe total con IVA, VEN y
+               DEB menos devoluciones, por FECHA DE CARGA (fecha de pedido). Es el
+               criterio del cuadro "Facturacion por empresa" del portal.
 
 Las marcas salen del proveedor del articulo (catalogo de la base), salvo:
     - Pilaga (proveedor 142): las tostadas (codigoMarca 25) son PILAGA y el
@@ -70,6 +74,7 @@ PROVEEDORES = {
     "359": "HARINAS CHACABUCO", "94": "LA QUESERA",
 }
 SUMAN = {"VEN", "DEB"}
+EMPRESAS = [("1", "Tienda Perfecta"), ("2", "Rambla de los Lobos"), ("99", "X")]
 
 
 def cod(x):
@@ -169,6 +174,27 @@ def resumir(neto_por_cli, n_ref):
     return fila(obj, act, cob_obj, cob_act)
 
 
+def facturacion(ym):
+    """Facturacion total (todas las marcas) por empresa y por dia de carga del mes ym."""
+    y, m = map(int, ym.split("-"))
+    ult = calendar.monthrange(y, m)[1]
+    por_dia = defaultdict(lambda: defaultdict(float))
+    # de a una semana: /api/ventas devuelve el JSON entero de cada comprobante
+    for d1 in range(1, ult + 1, 7):
+        desde, hasta = f"{ym}-{d1:02d}", f"{ym}-{min(d1 + 6, ult):02d}"
+        for v in base_get("/api/ventas", desde=desde, hasta=hasta, por="pedido"):
+            tipo = cod(v.get("codigoTipoVenta"))
+            signo = 1 if tipo in SUMAN else -1 if tipo.startswith("DEV") else 0
+            if signo:
+                por_dia[(v.get("fechaPedido") or "")[:10]][cod(v.get("codigoEmpresa"))] += signo * float(v.get("importeTotal") or 0)
+    dias = [{"fecha": f, **{e: round(por_dia[f].get(e, 0)) for e, _ in EMPRESAS},
+             "total": round(sum(por_dia[f].get(e, 0) for e, _ in EMPRESAS))} for f in sorted(por_dia) if f[:7] == ym]
+    total = sum(d["total"] for d in dias)
+    empresas = [{"emp": e, "nombre": n, "total": sum(d[e] for d in dias),
+                 "pct": round(sum(d[e] for d in dias) / total, 4) if total else None} for e, n in EMPRESAS]
+    return {"total": total, "empresas": empresas, "dias": dias}
+
+
 def armar_mes(ym, hoy, arts, vendedores, datos_al):
     ref = meses_ref(ym)
     n_ref = len(ref)
@@ -228,7 +254,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
     return {
         "mes": ym, "mes_ant": ref[-1], "meses_ref": ref, "hoy": hoy.isoformat(),
         "habiles_mes": hab_mes, "habiles_hasta_hoy": hab_hoy, "datos_al": datos_al,
-        "marcas": marcas, "vendedores": vend,
+        "marcas": marcas, "vendedores": vend, "facturacion": facturacion(ym),
     }
 
 
