@@ -136,6 +136,25 @@ td .pct{display:block; font-size:11px; color:var(--muted); margin-top:2px}
 .seg button[aria-pressed="true"]{background:var(--accent); color:var(--panel)}
 .seg button:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
 tr.sel td{background:var(--accent-soft)}
+.matriz{border-collapse:separate; border-spacing:0; font-size:12.5px}
+.matriz th{background:var(--panel); position:sticky; top:0; z-index:2; border-bottom:1px solid var(--border); vertical-align:bottom; padding:10px 6px 8px}
+.matriz th.num{width:64px; min-width:64px}
+.matriz th.num .v{display:block; writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; margin:0 auto; font:600 11.5px "IBM Plex Sans"; color:var(--text); max-height:150px; overflow:hidden; text-overflow:ellipsis}
+.matriz th.num small{display:block; text-align:center; margin-top:6px; font:500 11px "IBM Plex Mono",monospace; color:var(--muted)}
+.matriz .vend{position:sticky; left:0; z-index:1; background:var(--panel); text-align:left; min-width:170px; padding:8px 10px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); font-family:"IBM Plex Sans"}
+.matriz th.vend{z-index:3; font:600 11px "IBM Plex Mono",monospace; letter-spacing:.06em; text-transform:uppercase; color:var(--muted)}
+.matriz td.vend b{display:block; font-weight:600}
+.matriz td.vend span{display:block; font:500 11.5px "IBM Plex Mono",monospace; color:var(--muted); margin-top:2px}
+.matriz td.cv{text-align:center; padding:6px 4px; border-bottom:1px solid var(--border); border-left:1px solid var(--border)}
+.matriz td.cv b{display:block; font:700 13.5px "IBM Plex Sans"}
+.matriz td.cv span{display:block; font-size:10.5px; opacity:.8}
+.matriz td.cv.good{background:var(--good-soft); color:var(--good)}
+.matriz td.cv.warn{background:var(--warn-soft); color:var(--warn)}
+.matriz td.cv.bad{background:var(--bad-soft); color:var(--bad)}
+.matriz td.cv.vacia{color:var(--muted); background:repeating-linear-gradient(135deg, transparent 0 6px, var(--panel-2) 6px 8px)}
+.matriz td.cv.base{font:600 13px "IBM Plex Mono",monospace}
+.matriz tr.total td{border-top:2px solid var(--border); font-weight:700}
+.matriz tbody tr:hover td{filter:brightness(.97)}
 </style>
 </head>
 <body>
@@ -347,36 +366,106 @@ function vistaMarca(m) {
   v.replaceChildren(...partes);
 }
 
-// Cobertura: clientes con compra contra el promedio de clientes por mes de los meses de referencia.
-let cobMarca = 'TOTAL';
+// Cobertura: de los clientes a los que cada vendedor les vendio en el periodo (dia, semana o mes de carga),
+// cuantos compraron cada marca. datos.facturacion.clientes = {fecha: {vendedor: [clientes]}} y
+// datos.cobertura_dia = {fecha: {vendedor: {marca: [clientes]}}}.
+let cAgr = 'dia', cPer = null;
+const SIN_COB = ['20', '31'];   // Deposito, FLOR
+
 function vistaCobertura() {
   const v = document.getElementById('vista');
-  const total = filaMarca('TOTAL');
-  const filas = datos.marcas.filter((d) => d.sub === 'Total' && d.marca !== 'TOTAL' && (d.cob_obj || d.cob_act))
-    .sort((a, b2) => b2.cob_obj - a.cob_obj)
-    .map((d) => ({ nombre: DETALLE[d.marca] || NOMBRE[d.marca] || d.marca, d, cls: d.marca === cobMarca ? 'sel' : '',
-      onClick: () => { cobMarca = d.marca; vistaCobertura(); } }));
-  filas.unshift({ nombre: 'Total (clientes distintos)', d: total, cls: 'total' + (cobMarca === 'TOTAL' ? ' sel' : ''),
-    onClick: () => { cobMarca = 'TOTAL'; vistaCobertura(); } });
+  const cd = datos.cobertura_dia, cl = datos.facturacion && datos.facturacion.clientes;
+  if (!cd || !cl) { v.replaceChildren(el('p', 'vacio', 'Todavía no hay cobertura por día cargada para este mes.')); return; }
+  const fechas = [...new Set([...Object.keys(cl), ...Object.keys(cd)])].sort();
+  const pers = [...new Set(fechas.map((f) => periodoDe(f, cAgr)))].sort().reverse();
+  if (!pers.includes(cPer)) cPer = pers[0] || null;
+  const enPer = fechas.filter((f) => periodoDe(f, cAgr) === cPer);
 
+  // clientes por vendedor (cualquier compra) y por vendedor y marca, sin repetir en el periodo
+  const base = {}, porMarca = {}, totMarca = {}, todos = new Set();
+  const agregar = (obj, k, cs) => { const s = obj[k] || (obj[k] = new Set()); cs.forEach((c) => s.add(c)); };
+  enPer.forEach((f) => {
+    Object.entries(cl[f] || {}).forEach(([ven, cs]) => { if (!SIN_COB.includes(ven)) { agregar(base, ven, cs); cs.forEach((c) => todos.add(c)); } });
+    Object.entries(cd[f] || {}).forEach(([ven, ms]) => {
+      if (SIN_COB.includes(ven)) return;
+      Object.entries(ms).forEach(([m, cs]) => {
+        agregar(base, ven, cs);                 // por si un cliente de la marca no vino en la lista general
+        cs.forEach((c) => todos.add(c));
+        agregar(porMarca[ven] || (porMarca[ven] = {}), m, cs);
+        agregar(totMarca, m, cs);
+      });
+    });
+  });
+  const marcas = MARCAS.map(([k]) => k).filter((k) => totMarca[k]).sort((a, b2) => totMarca[b2].size - totMarca[a].size);
+
+  // facturacion del vendedor en el periodo, debajo del nombre
+  const fact = {};
+  (datos.facturacion.filas || []).forEach(([f, ven, , n]) => { if (periodoDe(f, cAgr) === cPer) fact[ven] = (fact[ven] || 0) + n; });
+  const vendedores = Object.keys(base).sort((a, b2) => (fact[b2] || 0) - (fact[a] || 0));
+
+  // elegir dia / semana / mes y cual
   const ctl = el('div', 'filtros');
-  const lm = el('label', null, 'Vendedores de');
-  const sel = el('select');
-  sel.append(new Option('Todas las marcas', 'TOTAL'));
-  MARCAS.forEach(([k, n]) => sel.append(new Option(n, k)));
-  sel.value = cobMarca;
-  sel.addEventListener('change', () => { cobMarca = sel.value; vistaCobertura(); });
-  lm.append(sel);
-  ctl.append(lm);
+  const seg = el('div', 'seg');
+  [['dia', 'Día'], ['semana', 'Semana'], ['mes', 'Mes']].forEach(([k, n]) => {
+    const bt = el('button', null, n);
+    bt.setAttribute('aria-pressed', String(k === cAgr));
+    bt.addEventListener('click', () => { cAgr = k; cPer = null; vistaCobertura(); });
+    seg.append(bt);
+  });
+  const lv = el('label', null, 'Ver por');
+  lv.append(seg);
+  ctl.append(lv);
+  if (cAgr !== 'mes') {
+    const lp = el('label', null, cAgr === 'dia' ? 'Día' : 'Semana');
+    const sel = el('select');
+    pers.forEach((k) => sel.append(new Option(nombrePeriodo(k, cAgr), k)));
+    sel.value = cPer;
+    sel.addEventListener('change', () => { cPer = sel.value; vistaCobertura(); });
+    lp.append(sel);
+    ctl.append(lp);
+  }
 
-  const vend = datos.vendedores.filter((x) => x.marca === cobMarca).sort((a, b2) => b2.cob_obj - a.cob_obj || b2.cob_act - a.cob_act)
-    .map((x) => ({ nombre: x.vendedor, d: x }));
-  const nomSel = cobMarca === 'TOTAL' ? 'todas las marcas' : NOMBRE[cobMarca];
-  v.replaceChildren(kpis(total, 'cob'),
-    encabezado('Por marca', 'Clientes con compra neta en el mes contra el promedio de clientes por mes de ' + refTexto() + '. Tocá una marca para ver sus vendedores.', true),
-    tabla('Marca', filas, { modo: 'cob' }),
-    encabezado('Por vendedor · ' + nomSel, 'Clientes de cada vendedor que compraron ' + (cobMarca === 'TOTAL' ? 'alguna de estas marcas' : 'la marca') + '.'),
-    ctl, tabla('Vendedor', vend, { modo: 'cob', alto: true }));
+  const nivel = (p) => (p >= 0.5 ? 'good' : p >= 0.25 ? 'warn' : 'bad');
+  const celda = (n, d) => {
+    if (!n) return el('td', 'cv vacia', '—');
+    const p = d ? n / d : 0;
+    const td = el('td', 'cv ' + nivel(p));
+    td.append(el('b', null, fPct(p)), el('span', null, `${n}/${d}`));
+    return td;
+  };
+  const sc = el('div', 'table-scroll tall matriz-wrap');
+  const t = el('table', 'matriz');
+  const hr = el('tr');
+  hr.append(el('th', 'vend', 'Vendedor'), (() => { const x = el('th', 'num'); x.append(el('span', 'v', 'Clientes con compra'), el('small', null, String(todos.size))); return x; })());
+  marcas.forEach((m) => {
+    const x = el('th', 'num');
+    x.append(el('span', 'v', NOMBRE[m] || m), el('small', null, String(totMarca[m].size)));
+    hr.append(x);
+  });
+  const th = el('thead');
+  th.append(hr);
+  const tb = el('tbody');
+  vendedores.forEach((ven) => {
+    const tr = el('tr');
+    const nom = el('td', 'vend');
+    nom.append(el('b', null, datos.facturacion.nombres[ven] || 'Vendedor ' + ven), el('span', null, money.format(fact[ven] || 0)));
+    tr.append(nom, el('td', 'cv base', String(base[ven].size)));
+    marcas.forEach((m) => tr.append(celda(porMarca[ven] && porMarca[ven][m] ? porMarca[ven][m].size : 0, base[ven].size)));
+    tb.append(tr);
+  });
+  const trT = el('tr', 'total');
+  trT.append(el('td', 'vend', 'Total'), el('td', 'cv base', String(todos.size)));
+  marcas.forEach((m) => trT.append(celda(totMarca[m].size, todos.size)));
+  tb.append(trT);
+  t.append(th, tb);
+  sc.append(t);
+
+  const ley = el('div', 'legend');
+  [['good', '50 % o más'], ['warn', '25 % a 49 %'], ['bad', 'Menos de 25 %']].forEach(([c, txt]) => { const s = el('span'); s.append(el('i', 'dot ' + c), txt); ley.append(s); });
+  const h = encabezado('Cobertura · ' + (cPer ? nombrePeriodo(cPer, cAgr) : ''),
+    'De los clientes a los que cada vendedor les vendió algo en el período (por fecha de carga), cuántos compraron cada marca. Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.');
+  h.append(ley);
+  v.replaceChildren(ctl, h, vendedores.length ? sc : el('p', 'vacio', 'No hay ventas en este período.'));
 }
 
 // Meses de referencia del objetivo, p. ej. "agosto a octubre de 2026".

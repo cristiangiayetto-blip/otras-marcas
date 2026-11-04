@@ -186,6 +186,7 @@ def facturacion(ym, vendedores):
     y, m = map(int, ym.split("-"))
     ult = calendar.monthrange(y, m)[1]
     acc = defaultdict(float)
+    por_cli = defaultdict(float)   # (fecha, vendedor, cliente) -> total, para la cobertura
     # de a una semana: /api/ventas devuelve el JSON entero de cada comprobante
     for d1 in range(1, ult + 1, 7):
         desde, hasta = f"{ym}-{d1:02d}", f"{ym}-{min(d1 + 6, ult):02d}"
@@ -194,14 +195,43 @@ def facturacion(ym, vendedores):
             signo = 1 if tipo in SUMAN else -1 if tipo.startswith("DEV") else 0
             fecha = (v.get("fechaPedido") or "")[:10]
             if signo and fecha[:7] == ym:
-                acc[(fecha, cod(v.get("codigoVendedor")), cod(v.get("codigoEmpresa")))] += signo * float(v.get("importeTotal") or 0)
+                monto = signo * float(v.get("importeTotal") or 0)
+                acc[(fecha, cod(v.get("codigoVendedor")), cod(v.get("codigoEmpresa")))] += monto
+                por_cli[(fecha, cod(v.get("codigoVendedor")), cod(v.get("codigoCliente")))] += monto
     filas = [[f, ven, e, round(n)] for (f, ven, e), n in sorted(acc.items()) if round(n)]
+    # clientes con compra neta de cualquier cosa, por dia de carga y vendedor
+    clientes = defaultdict(dict)
+    for (f, ven, cli), n in sorted(por_cli.items()):
+        if n > 0:
+            clientes[f].setdefault(ven, []).append(cli)
     total = sum(f[3] for f in filas)
     empresas = [{"emp": e, "nombre": n, "total": sum(f[3] for f in filas if f[2] == e)} for e, n in EMPRESAS]
     for e in empresas:
         e["pct"] = round(e["total"] / total, 4) if total else None
     nombres = {ven: vendedores.get(ven) or f"Vendedor {ven}" for ven in sorted({f[1] for f in filas})}
-    return {"total": total, "empresas": empresas, "filas": filas, "nombres": nombres}
+    return {"total": total, "empresas": empresas, "filas": filas, "nombres": nombres, "clientes": clientes}
+
+
+def cobertura_dia(ym, arts):
+    """Clientes con compra neta de cada marca por dia de carga y vendedor: {fecha: {vendedor: {marca: [clientes]}}}.
+    Con facturacion.clientes (los que compraron cualquier cosa) la pagina arma la cobertura del dia, la semana o el mes."""
+    y, m = map(int, ym.split("-"))
+    desde, hasta = f"{ym}-01", f"{ym}-{calendar.monthrange(y, m)[1]:02d}"
+    acc = defaultdict(float)
+    for prov in PROVEEDORES:
+        for l in base_get("/api/lineas-proveedor", proveedor=prov, desde=desde, hasta=hasta, por="pedido"):
+            emp = cod(l.get("emp"))
+            art = arts.get((cod(l.get("item")), "1" if emp == "99" else emp))
+            fecha = (l.get("fp") or "")[:10]
+            if not art or cod(art.get("codigoProveedor")) != prov or fecha[:7] != ym:
+                continue
+            neto = float(l.get("neto") or 0) * (1 if l.get("tipo") in SUMAN else -1)
+            acc[(fecha, cod(l.get("ven")), marca_de(art), cod(l.get("cli")))] += neto
+    out = defaultdict(lambda: defaultdict(dict))
+    for (f, ven, marca, cli), n in sorted(acc.items()):
+        if n > 0:
+            out[f][ven].setdefault(marca, []).append(cli)
+    return out
 
 
 def armar_mes(ym, hoy, arts, vendedores, datos_al):
@@ -264,6 +294,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
         "mes": ym, "mes_ant": ref[-1], "meses_ref": ref, "hoy": hoy.isoformat(),
         "habiles_mes": hab_mes, "habiles_hasta_hoy": hab_hoy, "datos_al": datos_al,
         "marcas": marcas, "vendedores": vend, "facturacion": facturacion(ym, vendedores),
+        "cobertura_dia": cobertura_dia(ym, arts),
     }
 
 
