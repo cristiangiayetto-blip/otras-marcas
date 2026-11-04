@@ -63,7 +63,7 @@ h1{font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:clamp(26px
 .tab:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
 .tab.first{margin-right:8px}
 
-.kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:28px}
+.kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:28px}
 @media (max-width:860px){ .kpis{grid-template-columns:repeat(2,1fr)} }
 @media (max-width:420px){ .kpis{grid-template-columns:1fr} }
 .kpi{background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px 16px 14px; box-shadow:var(--shadow); min-width:0}
@@ -87,6 +87,7 @@ h1{font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:clamp(26px
 .table-scroll.tall{max-height:36rem; overflow:auto}
 table{border-collapse:collapse; width:100%; font-size:13px}
 .wide{min-width:880px}
+.media{min-width:560px}
 thead tr.grp th{font:600 11px/1 "IBM Plex Mono",monospace; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); text-align:center; padding:12px 10px 6px; background:var(--panel)}
 thead tr.grp th.g-a{color:var(--accent)}
 thead tr.cols th{font:600 11.5px "IBM Plex Sans"; color:var(--muted); text-align:right; padding:0 10px 10px; border-bottom:1px solid var(--border); white-space:nowrap; background:var(--panel)}
@@ -154,7 +155,7 @@ tr.sel td{background:var(--accent-soft)}
   <section id="vista" aria-live="polite"></section>
 
   <p class="foot-note">Venta: importe neto sin IVA, por fecha de entrega, con las devoluciones restadas. Objetivo: el promedio mensual de lo vendido en los 3 meses anteriores (o los que haya en la base); la cobertura objetivo es el promedio de clientes por mes de esos meses.
-    Cobertura: clientes con compra neta en el mes; el total cuenta cada cliente una sola vez aunque compre varias marcas.
+    Cobertura (en su solapa): clientes con compra neta en el mes; el total cuenta cada cliente una sola vez aunque compre varias marcas.
     Ritmo: días hábiles de lunes a sábado transcurridos sobre los del mes.
     Facturación: todas las marcas, importe total con IVA, ventas y notas de débito menos devoluciones, por fecha de carga del pedido. Fuente: base propia de Gescom.</p>
 </div>
@@ -166,14 +167,21 @@ const MARCAS = [
   ['CASTELL', 'Castell', 'castell'], ['CELUSAL', 'Celusal', 'celusal'], ['MENOYO', 'Menoyo', 'menoyo'],
   ['ECOVITA', 'Ecovita', 'ecovita'], ['FECOVITA', 'Fecovita', 'fecovita'],
   ['HARINAS CHACABUCO', 'Harinas Chacabuco', 'harinas-chacabuco'], ['LA QUESERA', 'La Quesera', 'la-quesera'],
+  ['FARGO', 'Fargo', 'fargo'], ['MORIXE', 'Morixe', 'morixe'], ['ELEBES', 'Elebes', 'elebes'], ['ROFINA', 'Rofina', 'rofina'],
+  ['GLAM', 'Glam', 'glam'], ['PEHUENIAS', 'Pehuenias', 'pehuenias'], ['L3N', 'L3N', 'l3n'], ['ASURIN', 'Asurin', 'asurin'],
+  ['LA DELICIA', 'La Delicia', 'la-delicia'], ['PASCUAL TOSO', 'Pascual Toso', 'pascual-toso'], ['LLORENTE', 'Llorente', 'llorente'],
+  ['NAC CLEAN', 'Nac Clean', 'nac-clean'], ['BARCELONA', 'Barcelona', 'barcelona'],
+  ['FUTURE BEVERAGES', 'Future Beverages', 'future-beverages'], ['EL CARMEN', 'El Carmen', 'el-carmen'],
 ];
 const NOMBRE = Object.fromEntries(MARCAS.map(([k, n]) => [k, n]));
 const SLUG = Object.fromEntries(MARCAS.map(([k, , s]) => [k, s]));
 const DE_SLUG = Object.fromEntries(MARCAS.map(([k, , s]) => [s, k]));
 const DETALLE = { LCB: 'LCB (Hileret y Tayal)' };
-const FACT = 'FACTURACION';
+const FACT = 'FACTURACION', COB = 'COBERTURA';
 SLUG[FACT] = 'facturacion';
 DE_SLUG.facturacion = FACT;
+SLUG[COB] = 'cobertura';
+DE_SLUG.cobertura = COB;
 
 const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 const int = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 });
@@ -213,8 +221,8 @@ function escribirUrl() {
 function dibujarTabs() {
   const nav = document.getElementById('tabs');
   nav.replaceChildren();
-  [['resumen', 'Resumen'], [FACT, 'Facturación']].concat(MARCAS.map(([k, n]) => [k, n])).forEach(([k, n], i) => {
-    const b = el('button', 'tab' + (i === 1 ? ' first' : ''), n);
+  [['resumen', 'Resumen'], [FACT, 'Facturación'], [COB, 'Cobertura']].concat(MARCAS.map(([k, n]) => [k, n])).forEach(([k, n], i) => {
+    const b = el('button', 'tab' + (i === 2 ? ' first' : ''), n);
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(k === tab));
     b.addEventListener('click', () => { tab = k; escribirUrl(); dibujar(); b.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
@@ -230,26 +238,21 @@ function kpi(label, value, foot, cls) {
 }
 const b = (t) => el('b', null, t);
 
-function kpis(d) {
-  const r = ritmo(), e = estado(d.cumpl, r);
+const RITMO_TXT = { good: 'Adelante del ritmo', warn: 'Un poco atrás del ritmo', bad: 'Atrás del ritmo' };
+
+function kpis(d, modo = 'venta') {
+  const r = ritmo();
   const wrap = el('div', 'kpis');
-  wrap.append(
-    kpi('Venta del mes', money.format(d.venta), ['Objetivo ', b(money.format(d.objetivo))], 'accent'),
-    (() => {
-      const k = kpi('Cumplimiento de venta', fPct(d.cumpl), ['Ritmo a hoy ', b(fPct(r)), ' · falta ', b(money.format(d.falta))]);
-      const txt = { good: 'Adelante del ritmo', warn: 'Un poco atrás del ritmo', bad: 'Atrás del ritmo' }[e];
-      if (txt) k.append(el('span', 'pill ' + e, txt));
-      return k;
-    })(),
-    kpi('Cobertura', int.format(d.cob_act) + ' clientes', ['Objetivo ', b(int.format(d.cob_obj)), ' clientes']),
-    (() => {
-      const ec = estado(d.cumpl_cob, r);
-      const k = kpi('Cumplimiento de cobertura', fPct(d.cumpl_cob), ['Faltan ', b(int.format(d.faltan_cli)), ' clientes']);
-      const txt = { good: 'Adelante del ritmo', warn: 'Un poco atrás del ritmo', bad: 'Atrás del ritmo' }[ec];
-      if (txt) k.append(el('span', 'pill ' + ec, txt));
-      return k;
-    })(),
-  );
+  const conPill = (k, c) => { const e = estado(c, r); if (RITMO_TXT[e]) k.append(el('span', 'pill ' + e, RITMO_TXT[e])); return k; };
+  if (modo === 'cob') {
+    wrap.append(
+      kpi('Cobertura', int.format(d.cob_act) + ' clientes', ['Objetivo ', b(int.format(d.cob_obj)), ' clientes'], 'accent'),
+      conPill(kpi('Cumplimiento de cobertura', fPct(d.cumpl_cob), ['Ritmo a hoy ', b(fPct(r)), ' · faltan ', b(int.format(d.faltan_cli)), ' clientes']), d.cumpl_cob));
+  } else {
+    wrap.append(
+      kpi('Venta del mes', money.format(d.venta), ['Objetivo ', b(money.format(d.objetivo))], 'accent'),
+      conPill(kpi('Cumplimiento de venta', fPct(d.cumpl), ['Ritmo a hoy ', b(fPct(r)), ' · falta ', b(money.format(d.falta))]), d.cumpl));
+  }
   return wrap;
 }
 
@@ -265,30 +268,28 @@ function medidor(c, r) {
   return box;
 }
 
+// opciones.modo: 'venta' (pesos) o 'cob' (clientes)
 function tabla(primera, filas, opciones = {}) {
   const r = ritmo();
+  const cob = opciones.modo === 'cob';
   const sc = el('div', 'table-scroll' + (opciones.alto ? ' tall' : ''));
-  const t = el('table', 'wide');
+  const t = el('table', 'media');
   const th = el('thead');
-  const g = el('tr', 'grp');
-  g.append(el('th'), (() => { const x = el('th', 'g-a', 'Venta'); x.colSpan = 4; return x; })(), el('th', 'sep'),
-    (() => { const x = el('th', 'g-a', 'Cobertura (clientes)'); x.colSpan = 4; return x; })());
   const c = el('tr', 'cols');
-  [[primera, 'name-col'], ['Objetivo'], ['Venta'], ['Cumplimiento'], ['Falta', 'hide-sm'], ['', 'sep'],
-    ['Objetivo'], ['Actual'], ['Cumplimiento'], ['Faltan', 'hide-sm']].forEach(([n, cls]) => c.append(el('th', cls, n)));
-  th.append(g, c);
+  (cob ? [[primera, 'name-col'], ['Objetivo (clientes)'], ['Con compra'], ['Cumplimiento'], ['Faltan']]
+    : [[primera, 'name-col'], ['Objetivo'], ['Venta'], ['Cumplimiento'], ['Falta', 'hide-sm']]).forEach(([n, cls]) => c.append(el('th', cls, n)));
+  th.append(c);
   const tb = el('tbody');
   if (!filas.length) {
-    const tr = el('tr'); const td = el('td', 'vacio', opciones.vacio || 'Sin datos'); td.colSpan = 10; tr.append(td); tb.append(tr);
+    const tr = el('tr'); const td = el('td', 'vacio', opciones.vacio || 'Sin datos'); td.colSpan = 5; tr.append(td); tb.append(tr);
   }
   filas.forEach(({ nombre, d, cls, onClick }) => {
     const tr = el('tr', cls || '');
     if (onClick) { tr.classList.add('link'); tr.addEventListener('click', onClick); }
-    const ec = estado(d.cumpl_cob, r);
-    tr.append(el('td', 'name', nombre), el('td', null, money.format(d.objetivo)), el('td', null, money.format(d.venta)),
-      (() => { const x = el('td'); x.append(medidor(d.cumpl, r)); return x; })(), el('td', 'hide-sm', money.format(d.falta)),
-      el('td', 'sep'), el('td', null, int.format(d.cob_obj)), el('td', null, int.format(d.cob_act)),
-      el('td', ec, fPct(d.cumpl_cob)), el('td', 'hide-sm', int.format(d.faltan_cli)));
+    const med = el('td');
+    med.append(medidor(cob ? d.cumpl_cob : d.cumpl, r));
+    if (cob) tr.append(el('td', 'name', nombre), el('td', null, int.format(d.cob_obj)), el('td', null, int.format(d.cob_act)), med, el('td', null, int.format(d.faltan_cli)));
+    else tr.append(el('td', 'name', nombre), el('td', null, money.format(d.objetivo)), el('td', null, money.format(d.venta)), med, el('td', 'hide-sm', money.format(d.falta)));
     tb.append(tr);
   });
   t.append(th, tb);
@@ -325,7 +326,7 @@ function vistaResumen() {
   });
   const vend = datos.vendedores.filter((d) => d.marca === 'TOTAL').map((d) => ({ nombre: d.vendedor, d }));
   v.replaceChildren(kpis(total),
-    encabezado('Por marca', 'Tocá una marca para abrir su solapa.', true), tabla('Marca', filas),
+    encabezado('Por marca', 'Tocá una marca para abrir su solapa. La cobertura está en su propia solapa.', true), tabla('Marca', filas),
     encabezado('Por vendedor, todas las marcas', 'El objetivo de cada vendedor es su promedio mensual de estas marcas en ' + refTexto() + '.'),
     tabla('Vendedor', vend, { alto: true }));
 }
@@ -344,6 +345,38 @@ function vistaMarca(m) {
   partes.push(encabezado('Por vendedor', 'El objetivo de cada vendedor es su promedio mensual de la marca en ' + refTexto() + '. Aparecen todos los vendedores, aunque no la vendan.', !subs.length),
     tabla('Vendedor', vend, { alto: true, vacio: 'No hay vendedores con venta en estos meses.' }));
   v.replaceChildren(...partes);
+}
+
+// Cobertura: clientes con compra contra el promedio de clientes por mes de los meses de referencia.
+let cobMarca = 'TOTAL';
+function vistaCobertura() {
+  const v = document.getElementById('vista');
+  const total = filaMarca('TOTAL');
+  const filas = datos.marcas.filter((d) => d.sub === 'Total' && d.marca !== 'TOTAL' && (d.cob_obj || d.cob_act))
+    .sort((a, b2) => b2.cob_obj - a.cob_obj)
+    .map((d) => ({ nombre: DETALLE[d.marca] || NOMBRE[d.marca] || d.marca, d, cls: d.marca === cobMarca ? 'sel' : '',
+      onClick: () => { cobMarca = d.marca; vistaCobertura(); } }));
+  filas.unshift({ nombre: 'Total (clientes distintos)', d: total, cls: 'total' + (cobMarca === 'TOTAL' ? ' sel' : ''),
+    onClick: () => { cobMarca = 'TOTAL'; vistaCobertura(); } });
+
+  const ctl = el('div', 'filtros');
+  const lm = el('label', null, 'Vendedores de');
+  const sel = el('select');
+  sel.append(new Option('Todas las marcas', 'TOTAL'));
+  MARCAS.forEach(([k, n]) => sel.append(new Option(n, k)));
+  sel.value = cobMarca;
+  sel.addEventListener('change', () => { cobMarca = sel.value; vistaCobertura(); });
+  lm.append(sel);
+  ctl.append(lm);
+
+  const vend = datos.vendedores.filter((x) => x.marca === cobMarca).sort((a, b2) => b2.cob_obj - a.cob_obj || b2.cob_act - a.cob_act)
+    .map((x) => ({ nombre: x.vendedor, d: x }));
+  const nomSel = cobMarca === 'TOTAL' ? 'todas las marcas' : NOMBRE[cobMarca];
+  v.replaceChildren(kpis(total, 'cob'),
+    encabezado('Por marca', 'Clientes con compra neta en el mes contra el promedio de clientes por mes de ' + refTexto() + '. Tocá una marca para ver sus vendedores.', true),
+    tabla('Marca', filas, { modo: 'cob' }),
+    encabezado('Por vendedor · ' + nomSel, 'Clientes de cada vendedor que compraron ' + (cobMarca === 'TOTAL' ? 'alguna de estas marcas' : 'la marca') + '.'),
+    ctl, tabla('Vendedor', vend, { modo: 'cob', alto: true }));
 }
 
 // Meses de referencia del objetivo, p. ej. "agosto a octubre de 2026".
@@ -504,7 +537,7 @@ function dibujar() {
   document.getElementById('estado').textContent = al
     ? 'Base Gescom al ' + al.toLocaleString('es-AR', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' })
     : '';
-  if (tab === 'resumen') vistaResumen(); else if (tab === FACT) vistaFacturacion(); else vistaMarca(tab);
+  if (tab === 'resumen') vistaResumen(); else if (tab === FACT) vistaFacturacion(); else if (tab === COB) vistaCobertura(); else vistaMarca(tab);
 }
 
 async function cargarMes(ym) {

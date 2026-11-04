@@ -63,15 +63,21 @@ MESES_OBJETIVO = 3       # meses que se promedian para el objetivo
 # No son vendedores de calle: no van en las tablas por vendedor (su venta si cuenta en las marcas).
 SIN_TABLA = {"20", "31"}   # Deposito, FLOR
 
-# Orden en que se muestran (el del pedido del 2/11/2026).
+# Orden en que se muestran: las del pedido del 2/11/2026 y despues las que tenian stock el 4/11/2026
+# (sin Pepsico ni Georgalos, que tienen su panel).
 MARCAS = ["PILAGA", "ADECO AGRO", "LCB", "ENTRENUTS", "SOFTYS", "SAN HUBERTO", "CASTELL",
-          "CELUSAL", "MENOYO", "ECOVITA", "FECOVITA", "HARINAS CHACABUCO", "LA QUESERA"]
+          "CELUSAL", "MENOYO", "ECOVITA", "FECOVITA", "HARINAS CHACABUCO", "LA QUESERA",
+          "FARGO", "MORIXE", "ELEBES", "ROFINA", "GLAM", "PEHUENIAS", "L3N", "ASURIN", "LA DELICIA",
+          "PASCUAL TOSO", "LLORENTE", "NAC CLEAN", "BARCELONA", "FUTURE BEVERAGES", "EL CARMEN"]
 PROVEEDORES = {
     "142": None,              # PILAGA / ADECO AGRO, segun codigoMarca
     "517": "LCB", "10": "LCB",
     "361": "ENTRENUTS", "443": "SOFTYS", "422": "SAN HUBERTO", "547": "CASTELL",
     "607": "CELUSAL", "603": "MENOYO", "351": "ECOVITA", "495": "FECOVITA",
     "359": "HARINAS CHACABUCO", "94": "LA QUESERA",
+    "433": "FARGO", "604": "MORIXE", "615": "ELEBES", "391": "ROFINA", "414": "GLAM", "589": "PEHUENIAS",
+    "141": "L3N", "360": "ASURIN", "25": "LA DELICIA", "273": "PASCUAL TOSO", "274": "LLORENTE",
+    "411": "NAC CLEAN", "502": "BARCELONA", "588": "FUTURE BEVERAGES", "594": "EL CARMEN",
 }
 SUMAN = {"VEN", "DEB"}
 EMPRESAS = [("1", "Tienda Perfecta"), ("2", "Rambla de los Lobos"), ("99", "X")]
