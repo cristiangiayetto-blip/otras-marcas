@@ -10,13 +10,17 @@ Georgalos, contra un objetivo que es lo vendido el mes anterior:
     indice.json                      meses disponibles y hora de actualizacion
     fecha.txt                        fecha de actualizacion, para la tarjeta del portal
 
-Criterios (los mismos del cuadro que se armo a mano el 2/11/2026):
+Criterios:
 
     venta      importe neto sin IVA, por FECHA DE ENTREGA del mes. VEN y DEB
                suman, todo lo demas (devoluciones) resta.
-    objetivo   la venta del mes anterior, con el mismo criterio.
+    objetivo   el promedio mensual de la venta de los 3 meses anteriores (o
+               los que haya en la base desde PRIMER_DATO), con el mismo criterio.
     cobertura  clientes con compra neta positiva de la marca en el mes. El
-               total cuenta cada cliente una sola vez.
+               total cuenta cada cliente una sola vez. La cobertura objetivo es
+               el promedio de clientes por mes de esos mismos meses.
+    vendedores en cada marca aparecen todos los que vendieron alguna de estas
+               marcas en el mes o en los de referencia, aunque sea en cero.
     ritmo      dias habiles (lunes a sabado, sin feriados) transcurridos sobre
                los del mes.
 
@@ -49,7 +53,9 @@ import requests
 DIR = Path(__file__).resolve().parent.parent   # raiz del repo: ahi lee la pagina
 BASE = "https://base.tienda-perfecta.workers.dev"
 TZ_AR = dt.timezone(dt.timedelta(hours=-3))
-PRIMER_MES = "2026-09"   # la base tiene datos desde el 1/8/2026: el primer objetivo es agosto
+PRIMER_DATO = "2026-08"  # la base tiene datos desde el 1/8/2026
+PRIMER_MES = "2026-09"   # primer mes con al menos un mes de referencia
+MESES_OBJETIVO = 3       # meses que se promedian para el objetivo
 
 # Orden en que se muestran (el del pedido del 2/11/2026).
 MARCAS = ["PILAGA", "ADECO AGRO", "LCB", "ENTRENUTS", "SOFTYS", "SAN HUBERTO", "CASTELL",
@@ -141,33 +147,48 @@ def fila(objetivo, venta, cob_obj, cob_act):
     }
 
 
-def resumir(neto_por_cli):
-    """{(per, cli): neto} -> objetivo, venta, cobertura objetivo y actual."""
-    obj = sum(n for (p, _), n in neto_por_cli.items() if p == "obj")
+def meses_ref(ym):
+    """Los MESES_OBJETIVO meses anteriores a ym que ya estan en la base, del mas viejo al mas nuevo."""
+    ref, m = [], ym
+    for _ in range(MESES_OBJETIVO):
+        m = mes_anterior(m)
+        if m >= PRIMER_DATO:
+            ref.insert(0, m)
+    return ref
+
+
+def resumir(neto_por_cli, n_ref):
+    """{(per, cli): neto} -> objetivo y cobertura objetivo promedio de los n_ref meses, venta y cobertura actual.
+    per es "act" o el mes de referencia (AAAA-MM)."""
+    obj = sum(n for (p, _), n in neto_por_cli.items() if p != "act") / n_ref
     act = sum(n for (p, _), n in neto_por_cli.items() if p == "act")
-    cob_obj = sum(1 for (p, _), n in neto_por_cli.items() if p == "obj" and n > 0)
+    cob_obj = round(sum(1 for (p, _), n in neto_por_cli.items() if p != "act" and n > 0) / n_ref)
     cob_act = sum(1 for (p, _), n in neto_por_cli.items() if p == "act" and n > 0)
     return fila(obj, act, cob_obj, cob_act)
 
 
 def armar_mes(ym, hoy, arts, vendedores, datos_al):
-    ant = mes_anterior(ym)
-    desde = f"{ant}-01"
-    y, m = map(int, ym.split("-"))
-    hasta = f"{ym}-{calendar.monthrange(y, m)[1]:02d}"
+    ref = meses_ref(ym)
+    n_ref = len(ref)
 
-    # neto por (marca, submarca, vendedor, periodo, cliente)
+    # neto por (marca, submarca, vendedor, periodo, cliente). El endpoint acepta hasta 62 dias: se pide mes por mes.
     acc = defaultdict(float)
-    for prov in PROVEEDORES:
-        for l in base_get("/api/lineas-proveedor", proveedor=prov, desde=desde, hasta=hasta, por="entrega"):
-            emp = cod(l.get("emp"))
-            art = arts.get((cod(l.get("item")), "1" if emp == "99" else emp))
-            # el endpoint junta articulos por codigo sin empresa: se confirma el proveedor aca
-            if not art or cod(art.get("codigoProveedor")) != prov:
-                continue
-            per = "act" if (l.get("fe") or "")[:7] == ym else "obj"
-            neto = float(l.get("neto") or 0) * (1 if l.get("tipo") in SUMAN else -1)
-            acc[(marca_de(art), submarca_de(art), cod(l.get("ven")), per, cod(l.get("cli")))] += neto
+    for mm in ref + [ym]:
+        y, m = map(int, mm.split("-"))
+        desde, hasta = f"{mm}-01", f"{mm}-{calendar.monthrange(y, m)[1]:02d}"
+        for prov in PROVEEDORES:
+            for l in base_get("/api/lineas-proveedor", proveedor=prov, desde=desde, hasta=hasta, por="entrega"):
+                emp = cod(l.get("emp"))
+                art = arts.get((cod(l.get("item")), "1" if emp == "99" else emp))
+                # el endpoint junta articulos por codigo sin empresa: se confirma el proveedor aca
+                if not art or cod(art.get("codigoProveedor")) != prov:
+                    continue
+                fe = (l.get("fe") or "")[:7]
+                if fe not in ref and fe != ym:
+                    continue
+                per = "act" if fe == ym else fe
+                neto = float(l.get("neto") or 0) * (1 if l.get("tipo") in SUMAN else -1)
+                acc[(marca_de(art), submarca_de(art), cod(l.get("ven")), per, cod(l.get("cli")))] += neto
 
     def juntar(clave):
         g = defaultdict(lambda: defaultdict(float))
@@ -187,19 +208,23 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
     marcas = []
     for i, marca in enumerate(MARCAS, 1):
         marcas.append({"marca": marca, "sub": "Total", "orden": i,
-                       **(resumir(por_marca[marca]) if marca in por_marca else vacia)})
-        subs = [{"marca": marca, "sub": s, "orden": i, **resumir(v)} for (mm, s), v in por_sub.items() if mm == marca]
+                       **(resumir(por_marca[marca], n_ref) if marca in por_marca else vacia)})
+        subs = [{"marca": marca, "sub": s, "orden": i, **resumir(v, n_ref)} for (mm, s), v in por_sub.items() if mm == marca]
         marcas += sorted(subs, key=lambda r: -r["objetivo"])
-    marcas.append({"marca": "TOTAL", "sub": "Total", "orden": 99, **(resumir(total["TOTAL"]) if total else vacia)})
+    marcas.append({"marca": "TOTAL", "sub": "Total", "orden": 99, **(resumir(total["TOTAL"], n_ref) if total else vacia)})
 
+    # todos los vendedores en todas las marcas, aunque no la vendan
     vend = []
-    for (ven, marca), v in list(por_ven.items()) + list(ven_total.items()):
-        vend.append({"ven": ven, "vendedor": vendedores.get(ven) or f"Vendedor {ven}", "marca": marca, **resumir(v)})
+    for ven in sorted({ven for (ven, _) in ven_total}, key=lambda v: (len(v), v)):
+        for marca in MARCAS + ["TOTAL"]:
+            v = (ven_total if marca == "TOTAL" else por_ven).get((ven, marca))
+            vend.append({"ven": ven, "vendedor": vendedores.get(ven) or f"Vendedor {ven}", "marca": marca,
+                         **(resumir(v, n_ref) if v else vacia)})
     vend.sort(key=lambda r: (r["marca"], -r["objetivo"]))
 
     hab_mes, hab_hoy = habiles(ym, hoy)
     return {
-        "mes": ym, "mes_ant": ant, "hoy": hoy.isoformat(),
+        "mes": ym, "mes_ant": ref[-1], "meses_ref": ref, "hoy": hoy.isoformat(),
         "habiles_mes": hab_mes, "habiles_hasta_hoy": hab_hoy, "datos_al": datos_al,
         "marcas": marcas, "vendedores": vend,
     }

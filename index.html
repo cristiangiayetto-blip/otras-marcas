@@ -133,7 +133,7 @@ td.sep, th.sep{width:14px; padding:0}
 
   <section id="vista" aria-live="polite"></section>
 
-  <p class="foot-note">Venta: importe neto sin IVA, por fecha de entrega, con las devoluciones restadas. Objetivo: lo vendido el mes anterior.
+  <p class="foot-note">Venta: importe neto sin IVA, por fecha de entrega, con las devoluciones restadas. Objetivo: el promedio mensual de lo vendido en los 3 meses anteriores (o los que haya en la base); la cobertura objetivo es el promedio de clientes por mes de esos meses.
     Cobertura: clientes con compra neta en el mes; el total cuenta cada cliente una sola vez aunque compre varias marcas.
     Ritmo: días hábiles de lunes a sábado transcurridos sobre los del mes. Fuente: base propia de Gescom.</p>
 </div>
@@ -302,7 +302,7 @@ function vistaResumen() {
   const vend = datos.vendedores.filter((d) => d.marca === 'TOTAL').map((d) => ({ nombre: d.vendedor, d }));
   v.replaceChildren(kpis(total),
     encabezado('Por marca', 'Tocá una marca para abrir su solapa.', true), tabla('Marca', filas),
-    encabezado('Por vendedor, todas las marcas', 'El objetivo de cada vendedor es lo que vendió de estas marcas el mes anterior.'),
+    encabezado('Por vendedor, todas las marcas', 'El objetivo de cada vendedor es su promedio mensual de estas marcas en ' + refTexto() + '.'),
     tabla('Vendedor', vend, { alto: true }));
 }
 
@@ -317,9 +317,17 @@ function vistaMarca(m) {
   const subs = datos.marcas.filter((x) => x.marca === m && x.sub !== 'Total').map((x) => ({ nombre: x.sub, d: x }));
   if (subs.length) partes.push(encabezado('Por submarca', null, true), tabla('Submarca', [{ nombre: 'Total', d, cls: 'total' }, ...subs]));
   const vend = datos.vendedores.filter((x) => x.marca === m).map((x) => ({ nombre: x.vendedor, d: x }));
-  partes.push(encabezado('Por vendedor', 'El objetivo de cada vendedor es lo que vendió de la marca el mes anterior.', !subs.length),
-    tabla('Vendedor', vend, { alto: true, vacio: 'Ningún vendedor vendió esta marca en este mes ni en el anterior.' }));
+  partes.push(encabezado('Por vendedor', 'El objetivo de cada vendedor es su promedio mensual de la marca en ' + refTexto() + '. Aparecen todos los vendedores, aunque no la vendan.', !subs.length),
+    tabla('Vendedor', vend, { alto: true, vacio: 'No hay vendedores con venta en estos meses.' }));
   v.replaceChildren(...partes);
+}
+
+// Meses de referencia del objetivo, p. ej. "agosto a octubre de 2026".
+function refTexto() {
+  const r = datos.meses_ref && datos.meses_ref.length ? datos.meses_ref : [datos.mes_ant];
+  const n = (m) => nombreMes(m).toLowerCase();
+  if (r.length === 1) return n(r[0]);
+  return n(r[0]).replace(/ de \d{4}$/, '') + ' a ' + n(r[r.length - 1]);
 }
 
 function dibujar() {
@@ -327,7 +335,7 @@ function dibujar() {
   if (!datos) return;
   const hoy = new Date(datos.hoy + 'T12:00:00');
   document.getElementById('sub').replaceChildren(
-    'Venta de ', b(nombreMes(datos.mes)), ' contra el objetivo, que es lo vendido en ', b(nombreMes(datos.mes_ant)),
+    'Venta de ', b(nombreMes(datos.mes)), ' contra el objetivo, que es el promedio mensual de ', b(refTexto()),
     `. Van `, b(`${datos.habiles_hasta_hoy} de ${datos.habiles_mes}`), ' días hábiles del mes.');
   const al = datos.datos_al ? new Date(datos.datos_al) : null;
   document.getElementById('estado').textContent = al
