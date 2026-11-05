@@ -79,7 +79,7 @@ PROVEEDORES = {
 ACTIVAS = set(MARCAS)
 STOCK = {}
 # Objetivo fijo de venta por vendedor (neto sin IVA, por mes) en lugar del promedio: pedido del 5/11/2026.
-OBJETIVO_FIJO = {"FECOVITA": 25000}
+OBJETIVO_FIJO = {"FECOVITA": 25000, "L3N": 450000}
 STOCK_MINIMO = 10   # un articulo cuenta como "con stock" si tiene mas de 10 unidades (sumando depositos)
 SUMAN = {"VEN", "DEB"}
 EMPRESAS = [("1", "Tienda Perfecta"), ("2", "Rambla de los Lobos"), ("99", "X")]
