@@ -368,106 +368,85 @@ function vistaMarca(m) {
   v.replaceChildren(...partes);
 }
 
-// Cobertura: de los clientes a los que cada vendedor les vendio en el periodo (dia, semana o mes de carga),
-// cuantos compraron cada marca. datos.facturacion.clientes = {fecha: {vendedor: [clientes]}} y
-// datos.cobertura_dia = {fecha: {vendedor: {marca: [clientes]}}}.
-let cAgr = 'dia', cPer = null;
+// Cobertura de surtido: de los articulos distintos de cada marca que se vendieron en el periodo
+// (dia, semana o mes de carga), cuantos vendio cada vendedor.
+// datos.articulos_dia = {fecha: {vendedor: {marca: [articulos]}}}.
+let cSem = null, cDia = null;   // lunes de la semana elegida ('' = todo el mes) y dia ('' = toda la semana)
 const SIN_COB = ['20', '31'];   // Deposito, FLOR
+
+const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+const diaSel = (f) => `${DIAS[new Date(f + 'T12:00:00Z').getUTCDay()]} ${f.slice(8, 10)}/${f.slice(5, 7)}`;
 
 function vistaCobertura() {
   const v = document.getElementById('vista');
-  const cd = datos.cobertura_dia, cl = datos.facturacion && datos.facturacion.clientes;
-  if (!cd || !cl) { v.replaceChildren(el('p', 'vacio', 'Todavía no hay cobertura por día cargada para este mes.')); return; }
-  const fechas = [...new Set([...Object.keys(cl), ...Object.keys(cd)])].sort();
-  const pers = [...new Set(fechas.map((f) => periodoDe(f, cAgr)))].sort().reverse();
-  if (!pers.includes(cPer)) cPer = pers[0] || null;
-  const enPer = fechas.filter((f) => periodoDe(f, cAgr) === cPer);
+  const ad = datos.articulos_dia || {};
+  const fechas = Object.keys(ad).sort();
+  const semanas = [...new Set(fechas.map((f) => periodoDe(f, 'semana')))].sort().reverse();
+  if (cSem === null || (cSem && !semanas.includes(cSem))) cSem = semanas[0] || '';
+  const enSem = cSem ? fechas.filter((f) => periodoDe(f, 'semana') === cSem) : fechas;
+  if (!cSem) cDia = '';
+  else if (cDia === null || (cDia && !enSem.includes(cDia))) cDia = enSem[enSem.length - 1] || '';
+  const enPer = cDia ? [cDia] : enSem;
+  const enPerSet = new Set(enPer);
 
-  // clientes por vendedor (cualquier compra) y por vendedor y marca, sin repetir en el periodo
-  const base = {}, porMarca = {}, totMarca = {}, todos = new Set();
-  const agregar = (obj, k, cs) => { const s = obj[k] || (obj[k] = new Set()); cs.forEach((c) => s.add(c)); };
-  enPer.forEach((f) => {
-    Object.entries(cl[f] || {}).forEach(([ven, cs]) => { if (!SIN_COB.includes(ven)) { agregar(base, ven, cs); cs.forEach((c) => todos.add(c)); } });
-    Object.entries(cd[f] || {}).forEach(([ven, ms]) => {
-      if (SIN_COB.includes(ven)) return;
-      Object.entries(ms).forEach(([m, cs]) => {
-        agregar(base, ven, cs);                 // por si un cliente de la marca no vino en la lista general
-        cs.forEach((c) => todos.add(c));
-        agregar(porMarca[ven] || (porMarca[ven] = {}), m, cs);
-        agregar(totMarca, m, cs);
-      });
-    });
-  });
-  // cartera de la marca: clientes que se la compraron al vendedor en los meses de referencia,
-  // mas los que la compran por primera vez en el periodo (asi el % no pasa de 100)
-  const cart = {}, totCart = {};
-  Object.entries(datos.cartera || {}).forEach(([ven, ms]) => {
-    if (SIN_COB.includes(ven)) return;
-    Object.entries(ms).forEach(([m, cs]) => agregar(cart[ven] || (cart[ven] = {}), m, cs));
-  });
-  Object.entries(porMarca).forEach(([ven, ms]) => Object.entries(ms).forEach(([m, s]) => agregar(cart[ven] || (cart[ven] = {}), m, [...s])));
-  Object.values(cart).forEach((ms) => Object.entries(ms).forEach(([m, s]) => agregar(totCart, m, [...s])));
-  const compran = (ven, m) => (porMarca[ven] && porMarca[ven][m] ? porMarca[ven][m].size : 0);
-  const stock = datos.stock || {};   // articulos con stock disponible hoy, por marca
-  const nCart = (m) => (totCart[m] ? totCart[m].size : 0);
-  const marcas = MARCAS.map(([k]) => k).filter((k) => totCart[k] || (stock[k] || []).length)
-    .sort((a, b2) => nCart(b2) - nCart(a) || (totMarca[b2] ? totMarca[b2].size : 0) - (totMarca[a] ? totMarca[a].size : 0));
+  // articulos distintos por vendedor y marca, y de toda la empresa por marca
+  const artVen = {}, artTot = {};
+  const agregar = (obj, k, its) => { const s = obj[k] || (obj[k] = new Set()); its.forEach((x) => s.add(x)); };
+  enPer.forEach((f) => Object.entries(ad[f] || {}).forEach(([ven, ms]) => {
+    if (SIN_COB.includes(ven) || Array.isArray(ms)) return;
+    Object.entries(ms).forEach(([m, its]) => { agregar(artVen[ven] || (artVen[ven] = {}), m, its); agregar(artTot, m, its); });
+  }));
+  const marcas = MARCAS.map(([k]) => k).filter((k) => artTot[k]).sort((a, b2) => artTot[b2].size - artTot[a].size);
 
   // facturacion del vendedor en el periodo, debajo del nombre
   const fact = {};
-  (datos.facturacion.filas || []).forEach(([f, ven, , n]) => { if (periodoDe(f, cAgr) === cPer) fact[ven] = (fact[ven] || 0) + n; });
-  const vendedores = [...new Set([...Object.keys(base), ...Object.keys(cart)])].sort((a, b2) => (fact[b2] || 0) - (fact[a] || 0));
+  ((datos.facturacion && datos.facturacion.filas) || []).forEach(([f, ven, , n]) => { if (enPerSet.has(f)) fact[ven] = (fact[ven] || 0) + n; });
+  const nombres = (datos.facturacion && datos.facturacion.nombres) || {};
+  const vendedores = [...new Set([...Object.keys(fact), ...Object.keys(artVen)])]
+    .filter((ven) => !SIN_COB.includes(ven) && (fact[ven] > 0 || artVen[ven]))
+    .sort((a, b2) => (fact[b2] || 0) - (fact[a] || 0));
 
-  // elegir dia / semana / mes y cual
+  // filtros: año, mes (el mismo de arriba), semana y dia
   const ctl = el('div', 'filtros');
-  const seg = el('div', 'seg');
-  [['dia', 'Día'], ['semana', 'Semana'], ['mes', 'Mes']].forEach(([k, n]) => {
-    const bt = el('button', null, n);
-    bt.setAttribute('aria-pressed', String(k === cAgr));
-    bt.addEventListener('click', () => { cAgr = k; cPer = null; vistaCobertura(); });
-    seg.append(bt);
-  });
-  const lv = el('label', null, 'Ver por');
-  lv.append(seg);
-  ctl.append(lv);
-  if (cAgr !== 'mes') {
-    const lp = el('label', null, cAgr === 'dia' ? 'Día' : 'Semana');
-    const sel = el('select');
-    pers.forEach((k) => sel.append(new Option(nombrePeriodo(k, cAgr), k)));
-    sel.value = cPer;
-    sel.addEventListener('change', () => { cPer = sel.value; vistaCobertura(); });
-    lp.append(sel);
-    ctl.append(lp);
-  }
+  const filtro = (nombre, opciones, valor, alCambiar) => {
+    const l = el('label', null, nombre);
+    const s = el('select');
+    opciones.forEach(([k, t]) => s.append(new Option(t, k)));
+    s.value = valor;
+    s.addEventListener('change', () => alCambiar(s.value));
+    l.append(s);
+    ctl.append(l);
+  };
+  const selMes = document.getElementById('f-mes');
+  const irAMes = (ym) => { if (ym && ym !== mes) { cSem = null; cDia = null; selMes.value = ym; selMes.dispatchEvent(new Event('change')); } };
+  const anios = [...new Set(indice.meses.map((m) => m.slice(0, 4)))];
+  filtro('Año', anios.map((a) => [a, a]), mes.slice(0, 4), (a) => irAMes(indice.meses.find((m) => m.startsWith(a))));
+  filtro('Mes', indice.meses.filter((m) => m.startsWith(mes.slice(0, 4)))
+    .map((m) => [m, nombreMes(m).split(' ')[0] + (m === indice.meses[0] ? ' (en curso)' : '')]), mes, irAMes);
+  const ultimo = fechas[fechas.length - 1];
+  filtro('Semana', [['', 'Todo el mes'], ...semanas.map((s) => {
+    const dias = fechas.filter((f) => periodoDe(f, 'semana') === s);
+    const a = dias[0], b2 = dias[dias.length - 1];
+    return [s, a === b2 ? diaSel(a) : `${a.slice(8, 10)} al ${b2.slice(8, 10)}/${b2.slice(5, 7)}`];
+  })], cSem, (s) => { cSem = s; cDia = null; vistaCobertura(); });
+  if (cSem) filtro('Día', [['', 'Toda la semana'], ...enSem.slice().reverse().map((f) => [f, diaSel(f)])], cDia, (d) => { cDia = d; vistaCobertura(); });
 
   const nivel = (p) => (p >= 0.5 ? 'good' : p >= 0.25 ? 'warn' : 'bad');
-  // articulos distintos que vendio cada vendedor de cada marca en el periodo
-  const artVen = {}, artTot = {};
-  enPer.forEach((f) => Object.entries((datos.articulos_dia || {})[f] || {}).forEach(([ven, ms]) => {
-    if (SIN_COB.includes(ven) || Array.isArray(ms)) return;   // los datos viejos venian sin vendedor
-    Object.entries(ms).forEach(([m, its]) => { agregar(artVen[ven] || (artVen[ven] = {}), m, its); agregar(artTot, m, its); });
-  }));
-  const conArt = Object.keys(artTot).length > 0;
-  const celda = (n, d, arts) => {
-    if (!d) return el('td', 'cv vacia', '—');
+  const celda = (n, d) => {
+    if (!n) return el('td', 'cv vacia', '—');
     const p = n / d;
     const td = el('td', 'cv ' + nivel(p));
     td.append(el('b', null, fPct(p)), el('span', null, `${n}/${d}`));
-    if (conArt) td.append(el('span', 'art', `${arts} art.`));
     return td;
   };
   const sc = el('div', 'table-scroll tall matriz-wrap');
   const t = el('table', 'matriz');
   const hr = el('tr');
-  hr.append(el('th', 'vend', 'Vendedor'), (() => { const x = el('th', 'num'); x.append(el('span', 'v', 'Clientes con compra'), el('small', null, String(todos.size))); return x; })());
+  hr.append(el('th', 'vend', 'Vendedor'));
   marcas.forEach((m) => {
     const x = el('th', 'num');
-    x.append(el('span', 'v', NOMBRE[m] || m));
-    if (datos.stock) {
-      const art = el('small', 'art', `${(stock[m] || []).length} art.`);
-      art.title = 'Artículos con stock disponible hoy';
-      x.append(art);
-    }
+    x.append(el('span', 'v', NOMBRE[m] || m), el('small', null, String(artTot[m].size)));
+    x.title = `${NOMBRE[m] || m}: ${artTot[m].size} artículos distintos vendidos en el período`;
     hr.append(x);
   });
   const th = el('thead');
@@ -476,25 +455,22 @@ function vistaCobertura() {
   vendedores.forEach((ven) => {
     const tr = el('tr');
     const nom = el('td', 'vend');
-    nom.append(el('b', null, datos.facturacion.nombres[ven] || 'Vendedor ' + ven), el('span', null, money.format(fact[ven] || 0)));
-    tr.append(nom, el('td', 'cv base', String(base[ven] ? base[ven].size : 0)));
-    marcas.forEach((m) => tr.append(celda(compran(ven, m), cart[ven] && cart[ven][m] ? cart[ven][m].size : 0,
-      artVen[ven] && artVen[ven][m] ? artVen[ven][m].size : 0)));
+    nom.append(el('b', null, nombres[ven] || 'Vendedor ' + ven), el('span', null, money.format(fact[ven] || 0)));
+    tr.append(nom);
+    marcas.forEach((m) => tr.append(celda(artVen[ven] && artVen[ven][m] ? artVen[ven][m].size : 0, artTot[m].size)));
     tb.append(tr);
   });
-  const trT = el('tr', 'total');
-  trT.append(el('td', 'vend', 'Total'), el('td', 'cv base', String(todos.size)));
-  marcas.forEach((m) => trT.append(celda(totMarca[m] ? totMarca[m].size : 0, nCart(m), artTot[m] ? artTot[m].size : 0)));
-  tb.append(trT);
   t.append(th, tb);
   sc.append(t);
 
   const ley = el('div', 'legend');
   [['good', '50 % o más'], ['warn', '25 % a 49 %'], ['bad', 'Menos de 25 %']].forEach(([c, txt]) => { const s = el('span'); s.append(el('i', 'dot ' + c), txt); ley.append(s); });
-  const h = encabezado('Cobertura · ' + (cPer ? nombrePeriodo(cPer, cAgr) : ''),
-    `Cartera de cada marca: los clientes que se la compraron a ese vendedor de ${refTexto()}, más los nuevos del período. Cada celda dice cuántos de esa cartera compraron la marca en el período (por fecha de carga). Abajo, en cada celda, cuántos artículos distintos de la marca vendió en el período; arriba de cada marca, la cantidad de artículos con stock disponible hoy. Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.`);
+  const titulo = cDia ? diaSel(cDia) : cSem ? 'semana ' + ctl.querySelectorAll('select')[2].selectedOptions[0].text : nombreMes(mes);
+  const h = encabezado('Cobertura · ' + titulo,
+    'Arriba de cada marca, cuántos artículos distintos se vendieron en el período (por fecha de carga). Cada celda dice cuántos de esos artículos vendió el vendedor. Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.');
   h.append(ley);
-  v.replaceChildren(ctl, h, vendedores.length ? sc : el('p', 'vacio', 'No hay ventas en este período.'));
+  v.replaceChildren(ctl, h, vendedores.length && marcas.length ? sc : el('p', 'vacio', 'No hay ventas en este período.'));
+  if (ultimo === undefined) v.replaceChildren(ctl, el('p', 'vacio', 'Todavía no hay artículos por día cargados para este mes.'));
 }
 
 // Meses de referencia del objetivo, p. ej. "agosto a octubre de 2026".
