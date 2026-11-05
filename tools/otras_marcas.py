@@ -78,6 +78,7 @@ PROVEEDORES = {
 # Las de MARCAS que hoy tienen stock: se arma en main con la foto de stock de la base.
 ACTIVAS = set(MARCAS)
 STOCK = {}
+STOCK_MINIMO = 10   # un articulo cuenta como "con stock" si tiene mas de 10 unidades (sumando depositos)
 SUMAN = {"VEN", "DEB"}
 EMPRESAS = [("1", "Tienda Perfecta"), ("2", "Rambla de los Lobos"), ("99", "X")]
 
@@ -243,12 +244,12 @@ def cobertura_dia(ym, arts):
 
 
 def stock_por_marca(arts):
-    """Articulos con stock disponible (> 0, sumando depositos) de cada marca: {marca: [codigos]}.
+    """Articulos con mas de STOCK_MINIMO unidades (sumando depositos) de cada marca: {marca: [codigos]}.
     Es la foto que guardo el robot de la base; el stock no viene por empresa: se busca el articulo en la 1 y en la 2."""
     out = defaultdict(set)
     for s in base_get("/gescom/data/cmd/inventario/api/v1/get-stock"):
         item = cod(s.get("codigoItem"))
-        if sum(float(x.get("cantidad") or 0) for x in s.get("stock") or []) <= 0:
+        if sum(float(x.get("cantidad") or 0) for x in s.get("stock") or []) <= STOCK_MINIMO:
             continue
         art = arts.get((item, "1")) or arts.get((item, "2"))
         if art and marca_base(art):

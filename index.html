@@ -450,7 +450,7 @@ function vistaCobertura() {
   marcas.forEach((m) => {
     const x = el('th', 'num');
     x.append(el('span', 'v', NOMBRE[m] || m), el('small', null, String(surt[m].size)));
-    x.title = `${NOMBRE[m] || m}: ${surt[m].size} artículos con stock`;
+    x.title = `${NOMBRE[m] || m}: ${surt[m].size} artículos con más de 10 unidades en stock`;
     hr.append(x);
   });
   const th = el('thead');
@@ -471,7 +471,7 @@ function vistaCobertura() {
   [['good', '50 % o más'], ['warn', '25 % a 49 %'], ['bad', 'Menos de 25 %']].forEach(([c, txt]) => { const s = el('span'); s.append(el('i', 'dot ' + c), txt); ley.append(s); });
   const titulo = cDia ? diaSel(cDia) : cSem ? 'semana ' + ctl.querySelectorAll('select')[2].selectedOptions[0].text : nombreMes(mes);
   const h = encabezado('Cobertura · ' + titulo,
-    'Arriba de cada marca, cuántos artículos tiene con stock hoy (más los vendidos en el período que se quedaron sin stock). Cada celda dice cuántos de esos artículos vendió el vendedor en el período (por fecha de carga). Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.');
+    'Arriba de cada marca, cuántos artículos tiene con más de 10 unidades en stock hoy (más los vendidos en el período que se quedaron sin stock). Cada celda dice cuántos de esos artículos vendió el vendedor en el período (por fecha de carga). Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.');
   h.append(ley);
   v.replaceChildren(ctl, h, vendedores.length && marcas.length ? sc : el('p', 'vacio', 'No hay ventas en este período.'));
   if (ultimo === undefined) v.replaceChildren(ctl, el('p', 'vacio', 'Todavía no hay artículos por día cargados para este mes.'));
