@@ -70,11 +70,10 @@ MARCAS = ["SOFTYS", "ECOVITA", "LCB", "FECOVITA", "HARINAS CHACABUCO", "ENTRENUT
           "LA DELICIA", "ROFINA", "FUTURE BEVERAGES"]
 PROVEEDORES = {
     "142": None,              # PILAGA / ADECO AGRO, segun codigoMarca
-    "517": "LCB", "10": "LCB",
+    "517": "LCB", "10": "LAGOPUELO",    # 10 = Lagopuelo S.A. (Hileret), aparte de LCB (Tayal)
     "443": "SOFTYS", "351": "ECOVITA", "495": "FECOVITA", "359": "HARINAS CHACABUCO", "361": "ENTRENUTS",
     "547": "CASTELL", "594": "EL CARMEN", "94": "LA QUESERA", "141": "L3N", "589": "PEHUENIAS",
     "603": "MENOYO", "604": "MORIXE", "25": "LA DELICIA", "391": "ROFINA", "588": "FUTURE BEVERAGES",
-    # LAGOPUELO: el codigo se busca por nombre en el catalogo de proveedores (buscar_proveedores)
 }
 # Las de MARCAS que hoy tienen stock: se arma en main con la foto de stock de la base.
 ACTIVAS = set(MARCAS)
@@ -108,15 +107,6 @@ def marca_de(art):
     return m if m in ACTIVAS else None
 
 
-def buscar_proveedores():
-    """Agrega a PROVEEDORES los que se buscan por nombre (Lagopuelo)."""
-    for p in base_get("/api/catalogo/proveedores"):
-        texto = " ".join(str(v) for v in p.values() if isinstance(v, str)).upper()
-        if "LAGOPUELO" in texto and cod(p.get("codigo")):
-            PROVEEDORES[cod(p.get("codigo"))] = "LAGOPUELO"
-            print(f"Lagopuelo: proveedor {cod(p.get('codigo'))}")
-
-
 def marca_base(art):
     prov = cod(art.get("codigoProveedor"))
     if prov == "142":
@@ -126,10 +116,6 @@ def marca_base(art):
 
 def submarca_de(art):
     prov = cod(art.get("codigoProveedor"))
-    if prov == "517":
-        return "Tayal"
-    if prov == "10":
-        return "Hileret"
     if prov != "443":
         return None
     d = (art.get("descripcion") or "").upper()
@@ -352,7 +338,6 @@ def main(args):
     meses = args or ([mes_anterior(actual)] if hoy.day <= 7 else []) + [actual]
     meses = [m for m in meses if PRIMER_MES <= m <= actual]
 
-    buscar_proveedores()
     arts = articulos()
     global STOCK
     STOCK = stock_por_marca(arts)
