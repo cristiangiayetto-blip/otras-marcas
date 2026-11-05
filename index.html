@@ -183,17 +183,16 @@ tr.sel td{background:var(--accent-soft)}
 
 <script>
 const MARCAS = [
-  ['PILAGA', 'Pilagá', 'pilaga'], ['ADECO AGRO', 'Adeco Agro', 'adeco-agro'], ['LCB', 'LCB', 'lcb'],
-  ['ENTRENUTS', 'Entrenuts', 'entrenuts'], ['SOFTYS', 'Softys', 'softys'], ['SAN HUBERTO', 'San Huberto', 'san-huberto'],
-  ['CASTELL', 'Castell', 'castell'], ['CELUSAL', 'Celusal', 'celusal'], ['MENOYO', 'Menoyo', 'menoyo'],
-  ['ECOVITA', 'Ecovita', 'ecovita'], ['FECOVITA', 'Fecovita', 'fecovita'],
-  ['HARINAS CHACABUCO', 'Harinas Chacabuco', 'harinas-chacabuco'], ['LA QUESERA', 'La Quesera', 'la-quesera'],
-  ['FARGO', 'Fargo', 'fargo'], ['MORIXE', 'Morixe', 'morixe'], ['ELEBES', 'Elebes', 'elebes'], ['ROFINA', 'Rofina', 'rofina'],
-  ['GLAM', 'Glam', 'glam'], ['PEHUENIAS', 'Pehuenias', 'pehuenias'], ['L3N', 'L3N', 'l3n'], ['ASURIN', 'Asurin', 'asurin'],
-  ['LA DELICIA', 'La Delicia', 'la-delicia'], ['PASCUAL TOSO', 'Pascual Toso', 'pascual-toso'], ['LLORENTE', 'Llorente', 'llorente'],
-  ['NAC CLEAN', 'Nac Clean', 'nac-clean'], ['BARCELONA', 'Barcelona', 'barcelona'],
-  ['FUTURE BEVERAGES', 'Future Beverages', 'future-beverages'], ['EL CARMEN', 'El Carmen', 'el-carmen'],
+  ['SOFTYS', 'Softys', 'softys'], ['ECOVITA', 'Ecovita', 'ecovita'], ['LCB', 'LCB', 'lcb'], ['FECOVITA', 'Fecovita', 'fecovita'],
+  ['HARINAS CHACABUCO', 'Molino Chacabuco', 'molino-chacabuco'], ['ENTRENUTS', 'Entrenuts', 'entrenuts'],
+  ['CASTELL', 'Castell', 'castell'], ['EL CARMEN', 'El Carmen', 'el-carmen'], ['LAGOPUELO', 'Lagopuelo', 'lagopuelo'],
+  ['LA QUESERA', 'Cassini y Cesaratto', 'cassini'], ['L3N', 'L3N', 'l3n'], ['PILAGA', 'Pilagá', 'pilaga'],
+  ['ADECO AGRO', 'Adeco Agro', 'adeco-agro'], ['PEHUENIAS', 'Pehuenias', 'pehuenias'], ['MENOYO', 'Menoyo', 'menoyo'],
+  ['MORIXE', 'Morixe', 'morixe'], ['LA DELICIA', 'La Delicia', 'la-delicia'], ['ROFINA', 'Rofina', 'rofina'],
+  ['FUTURE BEVERAGES', 'Future Beverages', 'future-beverages'],
 ];
+// Solo las que tienen stock: el script manda la lista en datos.marcas_activas.
+const activas = () => (datos && datos.marcas_activas ? MARCAS.filter(([k]) => datos.marcas_activas.includes(k)) : MARCAS);
 const NOMBRE = Object.fromEntries(MARCAS.map(([k, n]) => [k, n]));
 const SLUG = Object.fromEntries(MARCAS.map(([k, , s]) => [k, s]));
 const DE_SLUG = Object.fromEntries(MARCAS.map(([k, , s]) => [s, k]));
@@ -242,7 +241,7 @@ function escribirUrl() {
 function dibujarTabs() {
   const nav = document.getElementById('tabs');
   nav.replaceChildren();
-  [['resumen', 'Resumen'], [FACT, 'Facturación'], [COB, 'Cobertura']].concat(MARCAS.map(([k, n]) => [k, n])).forEach(([k, n], i) => {
+  [['resumen', 'Resumen'], [FACT, 'Facturación'], [COB, 'Cobertura']].concat(activas().map(([k, n]) => [k, n])).forEach(([k, n], i) => {
     const b = el('button', 'tab' + (i === 2 ? ' first' : ''), n);
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(k === tab));
@@ -400,7 +399,7 @@ function vistaCobertura() {
   const surt = {};
   Object.entries(datos.stock || {}).forEach(([m, its]) => agregar(surt, m, its));
   Object.entries(artTot).forEach(([m, its]) => agregar(surt, m, its));
-  const marcas = MARCAS.map(([k]) => k).filter((k) => surt[k])
+  const marcas = activas().map(([k]) => k).filter((k) => surt[k])
     .sort((a, b2) => surt[b2].size - surt[a].size || (artTot[b2] ? artTot[b2].size : 0) - (artTot[a] ? artTot[a].size : 0));
 
   // facturacion del vendedor en el periodo, debajo del nombre
@@ -626,6 +625,8 @@ function vistaFacturacion() {
 }
 
 function dibujar() {
+  // si la solapa elegida es una marca que ya no se muestra (sin stock), se vuelve al resumen
+  if (datos && ![ 'resumen', FACT, COB ].includes(tab) && !activas().some(([k]) => k === tab)) tab = 'resumen';
   dibujarTabs();
   if (!datos) return;
   const hoy = new Date(datos.hoy + 'T12:00:00');

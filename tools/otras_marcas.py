@@ -63,22 +63,22 @@ MESES_OBJETIVO = 3       # meses que se promedian para el objetivo
 # No son vendedores de calle: no van en las tablas por vendedor (su venta si cuenta en las marcas).
 SIN_TABLA = {"20", "31"}   # Deposito, FLOR
 
-# Orden en que se muestran: las del pedido del 2/11/2026 y despues las que tenian stock el 4/11/2026
-# (sin Pepsico ni Georgalos, que tienen su panel).
-MARCAS = ["PILAGA", "ADECO AGRO", "LCB", "ENTRENUTS", "SOFTYS", "SAN HUBERTO", "CASTELL",
-          "CELUSAL", "MENOYO", "ECOVITA", "FECOVITA", "HARINAS CHACABUCO", "LA QUESERA",
-          "FARGO", "MORIXE", "ELEBES", "ROFINA", "GLAM", "PEHUENIAS", "L3N", "ASURIN", "LA DELICIA",
-          "PASCUAL TOSO", "LLORENTE", "NAC CLEAN", "BARCELONA", "FUTURE BEVERAGES", "EL CARMEN"]
+# Orden en que se muestran: la lista de proveedores del 5/11/2026 (sin Pepsico ni Georgalos, que tienen su panel).
+# Pilaga S.A. (142) trae dos marcas: Pilaga y Adeco Agro. Solo se muestran las que tienen stock (ver ACTIVAS).
+MARCAS = ["SOFTYS", "ECOVITA", "LCB", "FECOVITA", "HARINAS CHACABUCO", "ENTRENUTS", "CASTELL", "EL CARMEN",
+          "LAGOPUELO", "LA QUESERA", "L3N", "PILAGA", "ADECO AGRO", "PEHUENIAS", "MENOYO", "MORIXE",
+          "LA DELICIA", "ROFINA", "FUTURE BEVERAGES"]
 PROVEEDORES = {
     "142": None,              # PILAGA / ADECO AGRO, segun codigoMarca
     "517": "LCB", "10": "LCB",
-    "361": "ENTRENUTS", "443": "SOFTYS", "422": "SAN HUBERTO", "547": "CASTELL",
-    "607": "CELUSAL", "603": "MENOYO", "351": "ECOVITA", "495": "FECOVITA",
-    "359": "HARINAS CHACABUCO", "94": "LA QUESERA",
-    "433": "FARGO", "604": "MORIXE", "615": "ELEBES", "391": "ROFINA", "414": "GLAM", "589": "PEHUENIAS",
-    "141": "L3N", "360": "ASURIN", "25": "LA DELICIA", "273": "PASCUAL TOSO", "274": "LLORENTE",
-    "411": "NAC CLEAN", "502": "BARCELONA", "588": "FUTURE BEVERAGES", "594": "EL CARMEN",
+    "443": "SOFTYS", "351": "ECOVITA", "495": "FECOVITA", "359": "HARINAS CHACABUCO", "361": "ENTRENUTS",
+    "547": "CASTELL", "594": "EL CARMEN", "94": "LA QUESERA", "141": "L3N", "589": "PEHUENIAS",
+    "603": "MENOYO", "604": "MORIXE", "25": "LA DELICIA", "391": "ROFINA", "588": "FUTURE BEVERAGES",
+    # LAGOPUELO: el codigo se busca por nombre en el catalogo de proveedores (buscar_proveedores)
 }
+# Las de MARCAS que hoy tienen stock: se arma en main con la foto de stock de la base.
+ACTIVAS = set(MARCAS)
+STOCK = {}
 SUMAN = {"VEN", "DEB"}
 EMPRESAS = [("1", "Tienda Perfecta"), ("2", "Rambla de los Lobos"), ("99", "X")]
 
@@ -103,6 +103,21 @@ def base_get(ruta, **params):
 
 
 def marca_de(art):
+    """Marca del articulo, solo si es una de las que se muestran (con stock)."""
+    m = marca_base(art)
+    return m if m in ACTIVAS else None
+
+
+def buscar_proveedores():
+    """Agrega a PROVEEDORES los que se buscan por nombre (Lagopuelo)."""
+    for p in base_get("/api/catalogo/proveedores"):
+        texto = " ".join(str(v) for v in p.values() if isinstance(v, str)).upper()
+        if "LAGOPUELO" in texto and cod(p.get("codigo")):
+            PROVEEDORES[cod(p.get("codigo"))] = "LAGOPUELO"
+            print(f"Lagopuelo: proveedor {cod(p.get('codigo'))}")
+
+
+def marca_base(art):
     prov = cod(art.get("codigoProveedor"))
     if prov == "142":
         return "PILAGA" if cod(art.get("codigoMarca")) == "25" else "ADECO AGRO"
@@ -224,7 +239,7 @@ def cobertura_dia(ym, arts):
             emp = cod(l.get("emp"))
             art = arts.get((cod(l.get("item")), "1" if emp == "99" else emp))
             fecha = (l.get("fp") or "")[:10]
-            if not art or cod(art.get("codigoProveedor")) != prov or fecha[:7] != ym:
+            if not art or cod(art.get("codigoProveedor")) != prov or fecha[:7] != ym or not marca_de(art):
                 continue
             neto = float(l.get("neto") or 0) * (1 if l.get("tipo") in SUMAN else -1)
             acc[(fecha, cod(l.get("ven")), marca_de(art), cod(l.get("cli")))] += neto
@@ -250,8 +265,8 @@ def stock_por_marca(arts):
         if sum(float(x.get("cantidad") or 0) for x in s.get("stock") or []) <= 0:
             continue
         art = arts.get((item, "1")) or arts.get((item, "2"))
-        if art and marca_de(art):
-            out[marca_de(art)].add(item)
+        if art and marca_base(art):
+            out[marca_base(art)].add(item)
     return {m: sorted(v) for m, v in sorted(out.items())}
 
 
@@ -269,7 +284,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
                 emp = cod(l.get("emp"))
                 art = arts.get((cod(l.get("item")), "1" if emp == "99" else emp))
                 # el endpoint junta articulos por codigo sin empresa: se confirma el proveedor aca
-                if not art or cod(art.get("codigoProveedor")) != prov:
+                if not art or cod(art.get("codigoProveedor")) != prov or not marca_de(art):
                     continue
                 fe = (l.get("fe") or "")[:7]
                 if fe not in ref and fe != ym:
@@ -294,7 +309,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
 
     vacia = fila(0, 0, 0, 0)
     marcas = []
-    for i, marca in enumerate(MARCAS, 1):
+    for i, marca in enumerate([m for m in MARCAS if m in ACTIVAS], 1):
         marcas.append({"marca": marca, "sub": "Total", "orden": i,
                        **(resumir(por_marca[marca], n_ref) if marca in por_marca else vacia)})
         subs = [{"marca": marca, "sub": s, "orden": i, **resumir(v, n_ref)} for (mm, s), v in por_sub.items() if mm == marca]
@@ -304,7 +319,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
     # todos los vendedores en todas las marcas, aunque no la vendan
     vend = []
     for ven in sorted({ven for (ven, _) in ven_total} - SIN_TABLA, key=lambda v: (len(v), v)):
-        for marca in MARCAS + ["TOTAL"]:
+        for marca in [m for m in MARCAS if m in ACTIVAS] + ["TOTAL"]:
             v = (ven_total if marca == "TOTAL" else por_ven).get((ven, marca))
             vend.append({"ven": ven, "vendedor": vendedores.get(ven) or f"Vendedor {ven}", "marca": marca,
                          **(resumir(v, n_ref) if v else vacia)})
@@ -324,7 +339,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
         "habiles_mes": hab_mes, "habiles_hasta_hoy": hab_hoy, "datos_al": datos_al,
         "marcas": marcas, "vendedores": vend, "facturacion": facturacion(ym, vendedores),
         "cobertura_dia": cob_dia, "articulos_dia": arts_dia, "cartera": cartera,
-        "stock": stock_por_marca(arts) if ym == hoy.strftime("%Y-%m") else None,
+        "stock": STOCK, "marcas_activas": [m for m in MARCAS if m in ACTIVAS],
     }
 
 
@@ -337,7 +352,13 @@ def main(args):
     meses = args or ([mes_anterior(actual)] if hoy.day <= 7 else []) + [actual]
     meses = [m for m in meses if PRIMER_MES <= m <= actual]
 
+    buscar_proveedores()
     arts = articulos()
+    global STOCK
+    STOCK = stock_por_marca(arts)
+    ACTIVAS.clear()
+    ACTIVAS.update(m for m in MARCAS if STOCK.get(m))
+    print("Sin stock, no se muestran:", [m for m in MARCAS if m not in ACTIVAS] or "ninguna")
     vendedores = {cod(v.get("codigo")): (v.get("nombre") or "").strip() for v in base_get("/api/catalogo/vendedores")}
     corridas = base_get("/api/estado").get("corridas") or []
     datos_al = max((c.get("inicio") or "" for c in corridas if c.get("estado") == "ok"), default=None)
