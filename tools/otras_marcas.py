@@ -83,6 +83,8 @@ STOCK_DETALLE = {}   # {marca: [[codigo, descripcion, unidades]]}, todo lo que t
 OBJETIVO_FIJO = {
     "FECOVITA": 25000, "L3N": 450000,
     "PILAGA": {"11": 300000, "7": 250000, "2": 200000, "10": 200000},   # Melanie Larrama, Ramiro Rando, Julian Nuñez y Matias Parada; el resto, el promedio
+    # Ramiro Rando, Agustin Pogorzelski, Camila Martinez, Melanie Larrama, Martinica Rodriguez, Ezequiel Hack y Maria Noelia Madia
+    "ADECO AGRO": {"7": 250000, "12": 100000, "6": 120000, "11": 120000, "8": 100000, "3": 100000, "1": 100000},
 }
 STOCK_MINIMO = 10   # un articulo cuenta como "con stock" si tiene mas de 10 unidades (sumando depositos)
 SUMAN = {"VEN", "DEB"}
