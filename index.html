@@ -396,7 +396,12 @@ function vistaCobertura() {
     if (SIN_COB.includes(ven) || Array.isArray(ms)) return;
     Object.entries(ms).forEach(([m, its]) => { agregar(artVen[ven] || (artVen[ven] = {}), m, its); agregar(artTot, m, its); });
   }));
-  const marcas = MARCAS.map(([k]) => k).filter((k) => artTot[k]).sort((a, b2) => artTot[b2].size - artTot[a].size);
+  // surtido de cada marca: los articulos con stock hoy, mas los vendidos en el periodo que hoy no tienen stock
+  const surt = {};
+  Object.entries(datos.stock || {}).forEach(([m, its]) => agregar(surt, m, its));
+  Object.entries(artTot).forEach(([m, its]) => agregar(surt, m, its));
+  const marcas = MARCAS.map(([k]) => k).filter((k) => surt[k])
+    .sort((a, b2) => surt[b2].size - surt[a].size || (artTot[b2] ? artTot[b2].size : 0) - (artTot[a] ? artTot[a].size : 0));
 
   // facturacion del vendedor en el periodo, debajo del nombre
   const fact = {};
@@ -445,8 +450,8 @@ function vistaCobertura() {
   hr.append(el('th', 'vend', 'Vendedor'));
   marcas.forEach((m) => {
     const x = el('th', 'num');
-    x.append(el('span', 'v', NOMBRE[m] || m), el('small', null, String(artTot[m].size)));
-    x.title = `${NOMBRE[m] || m}: ${artTot[m].size} artículos distintos vendidos en el período`;
+    x.append(el('span', 'v', NOMBRE[m] || m), el('small', null, String(surt[m].size)));
+    x.title = `${NOMBRE[m] || m}: ${surt[m].size} artículos con stock`;
     hr.append(x);
   });
   const th = el('thead');
@@ -457,7 +462,7 @@ function vistaCobertura() {
     const nom = el('td', 'vend');
     nom.append(el('b', null, nombres[ven] || 'Vendedor ' + ven), el('span', null, money.format(fact[ven] || 0)));
     tr.append(nom);
-    marcas.forEach((m) => tr.append(celda(artVen[ven] && artVen[ven][m] ? artVen[ven][m].size : 0, artTot[m].size)));
+    marcas.forEach((m) => tr.append(celda(artVen[ven] && artVen[ven][m] ? artVen[ven][m].size : 0, surt[m].size)));
     tb.append(tr);
   });
   t.append(th, tb);
@@ -467,7 +472,7 @@ function vistaCobertura() {
   [['good', '50 % o más'], ['warn', '25 % a 49 %'], ['bad', 'Menos de 25 %']].forEach(([c, txt]) => { const s = el('span'); s.append(el('i', 'dot ' + c), txt); ley.append(s); });
   const titulo = cDia ? diaSel(cDia) : cSem ? 'semana ' + ctl.querySelectorAll('select')[2].selectedOptions[0].text : nombreMes(mes);
   const h = encabezado('Cobertura · ' + titulo,
-    'Arriba de cada marca, cuántos artículos distintos se vendieron en el período (por fecha de carga). Cada celda dice cuántos de esos artículos vendió el vendedor. Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.');
+    'Arriba de cada marca, cuántos artículos tiene con stock hoy (más los vendidos en el período que se quedaron sin stock). Cada celda dice cuántos de esos artículos vendió el vendedor en el período (por fecha de carga). Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.');
   h.append(ley);
   v.replaceChildren(ctl, h, vendedores.length && marcas.length ? sc : el('p', 'vacio', 'No hay ventas en este período.'));
   if (ultimo === undefined) v.replaceChildren(ctl, el('p', 'vacio', 'Todavía no hay artículos por día cargados para este mes.'));
