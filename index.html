@@ -396,12 +396,23 @@ function vistaCobertura() {
       });
     });
   });
-  const marcas = MARCAS.map(([k]) => k).filter((k) => totMarca[k]).sort((a, b2) => totMarca[b2].size - totMarca[a].size);
+  // cartera de la marca: clientes que se la compraron al vendedor en los meses de referencia,
+  // mas los que la compran por primera vez en el periodo (asi el % no pasa de 100)
+  const cart = {}, totCart = {};
+  Object.entries(datos.cartera || {}).forEach(([ven, ms]) => {
+    if (SIN_COB.includes(ven)) return;
+    Object.entries(ms).forEach(([m, cs]) => agregar(cart[ven] || (cart[ven] = {}), m, cs));
+  });
+  Object.entries(porMarca).forEach(([ven, ms]) => Object.entries(ms).forEach(([m, s]) => agregar(cart[ven] || (cart[ven] = {}), m, [...s])));
+  Object.values(cart).forEach((ms) => Object.entries(ms).forEach(([m, s]) => agregar(totCart, m, [...s])));
+  const compran = (ven, m) => (porMarca[ven] && porMarca[ven][m] ? porMarca[ven][m].size : 0);
+  const marcas = MARCAS.map(([k]) => k).filter((k) => totCart[k])
+    .sort((a, b2) => totCart[b2].size - totCart[a].size || (totMarca[b2] ? totMarca[b2].size : 0) - (totMarca[a] ? totMarca[a].size : 0));
 
   // facturacion del vendedor en el periodo, debajo del nombre
   const fact = {};
   (datos.facturacion.filas || []).forEach(([f, ven, , n]) => { if (periodoDe(f, cAgr) === cPer) fact[ven] = (fact[ven] || 0) + n; });
-  const vendedores = Object.keys(base).sort((a, b2) => (fact[b2] || 0) - (fact[a] || 0));
+  const vendedores = [...new Set([...Object.keys(base), ...Object.keys(cart)])].sort((a, b2) => (fact[b2] || 0) - (fact[a] || 0));
 
   // elegir dia / semana / mes y cual
   const ctl = el('div', 'filtros');
@@ -427,8 +438,8 @@ function vistaCobertura() {
 
   const nivel = (p) => (p >= 0.5 ? 'good' : p >= 0.25 ? 'warn' : 'bad');
   const celda = (n, d) => {
-    if (!n) return el('td', 'cv vacia', '—');
-    const p = d ? n / d : 0;
+    if (!d) return el('td', 'cv vacia', '—');
+    const p = n / d;
     const td = el('td', 'cv ' + nivel(p));
     td.append(el('b', null, fPct(p)), el('span', null, `${n}/${d}`));
     return td;
@@ -439,7 +450,7 @@ function vistaCobertura() {
   hr.append(el('th', 'vend', 'Vendedor'), (() => { const x = el('th', 'num'); x.append(el('span', 'v', 'Clientes con compra'), el('small', null, String(todos.size))); return x; })());
   marcas.forEach((m) => {
     const x = el('th', 'num');
-    x.append(el('span', 'v', NOMBRE[m] || m), el('small', null, String(totMarca[m].size)));
+    x.append(el('span', 'v', NOMBRE[m] || m), el('small', null, `${totMarca[m] ? totMarca[m].size : 0}/${totCart[m].size}`));
     hr.append(x);
   });
   const th = el('thead');
@@ -449,13 +460,13 @@ function vistaCobertura() {
     const tr = el('tr');
     const nom = el('td', 'vend');
     nom.append(el('b', null, datos.facturacion.nombres[ven] || 'Vendedor ' + ven), el('span', null, money.format(fact[ven] || 0)));
-    tr.append(nom, el('td', 'cv base', String(base[ven].size)));
-    marcas.forEach((m) => tr.append(celda(porMarca[ven] && porMarca[ven][m] ? porMarca[ven][m].size : 0, base[ven].size)));
+    tr.append(nom, el('td', 'cv base', String(base[ven] ? base[ven].size : 0)));
+    marcas.forEach((m) => tr.append(celda(compran(ven, m), cart[ven] && cart[ven][m] ? cart[ven][m].size : 0)));
     tb.append(tr);
   });
   const trT = el('tr', 'total');
   trT.append(el('td', 'vend', 'Total'), el('td', 'cv base', String(todos.size)));
-  marcas.forEach((m) => trT.append(celda(totMarca[m].size, todos.size)));
+  marcas.forEach((m) => trT.append(celda(totMarca[m] ? totMarca[m].size : 0, totCart[m].size)));
   tb.append(trT);
   t.append(th, tb);
   sc.append(t);
@@ -463,7 +474,7 @@ function vistaCobertura() {
   const ley = el('div', 'legend');
   [['good', '50 % o más'], ['warn', '25 % a 49 %'], ['bad', 'Menos de 25 %']].forEach(([c, txt]) => { const s = el('span'); s.append(el('i', 'dot ' + c), txt); ley.append(s); });
   const h = encabezado('Cobertura · ' + (cPer ? nombrePeriodo(cPer, cAgr) : ''),
-    'De los clientes a los que cada vendedor les vendió algo en el período (por fecha de carga), cuántos compraron cada marca. Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.');
+    `Cartera de cada marca: los clientes que se la compraron a ese vendedor de ${refTexto()}, más los nuevos del período. Cada celda dice cuántos de esa cartera compraron la marca en el período (por fecha de carga). Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.`);
   h.append(ley);
   v.replaceChildren(ctl, h, vendedores.length ? sc : el('p', 'vacio', 'No hay ventas en este período.'));
 }

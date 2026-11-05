@@ -289,12 +289,19 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
                          **(resumir(v, n_ref) if v else vacia)})
     vend.sort(key=lambda r: (r["marca"], -r["objetivo"]))
 
+    # cartera de cada marca por vendedor: clientes con compra neta en alguno de los meses de referencia
+    cartera = defaultdict(dict)
+    for (ven, marca), g in sorted(por_ven.items()):
+        clis = sorted({cli for (p, cli), n in g.items() if p != "act" and n > 0}, key=lambda c: (len(c), c))
+        if clis and ven not in SIN_TABLA:
+            cartera[ven][marca] = clis
+
     hab_mes, hab_hoy = habiles(ym, hoy)
     return {
         "mes": ym, "mes_ant": ref[-1], "meses_ref": ref, "hoy": hoy.isoformat(),
         "habiles_mes": hab_mes, "habiles_hasta_hoy": hab_hoy, "datos_al": datos_al,
         "marcas": marcas, "vendedores": vend, "facturacion": facturacion(ym, vendedores),
-        "cobertura_dia": cobertura_dia(ym, arts),
+        "cobertura_dia": cobertura_dia(ym, arts), "cartera": cartera,
     }
 
 
