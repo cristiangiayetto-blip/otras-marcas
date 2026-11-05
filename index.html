@@ -141,7 +141,7 @@ tr.sel td{background:var(--accent-soft)}
 .matriz th.num{width:64px; min-width:64px}
 .matriz th.num .v{display:block; writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; margin:0 auto; font:600 11.5px "IBM Plex Sans"; color:var(--text); max-height:150px; overflow:hidden; text-overflow:ellipsis}
 .matriz th.num small{display:block; text-align:center; margin-top:6px; font:500 11px "IBM Plex Mono",monospace; color:var(--muted)}
-.matriz th.num small.art{margin-top:2px; color:var(--accent, var(--muted))}
+.matriz th.num small.art{color:var(--accent, var(--muted))}
 .matriz .vend{position:sticky; left:0; z-index:1; background:var(--panel); text-align:left; min-width:170px; padding:8px 10px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); font-family:"IBM Plex Sans"}
 .matriz th.vend{z-index:3; font:600 11px "IBM Plex Mono",monospace; letter-spacing:.06em; text-transform:uppercase; color:var(--muted)}
 .matriz td.vend b{display:block; font-weight:600}
@@ -407,9 +407,7 @@ function vistaCobertura() {
   Object.entries(porMarca).forEach(([ven, ms]) => Object.entries(ms).forEach(([m, s]) => agregar(cart[ven] || (cart[ven] = {}), m, [...s])));
   Object.values(cart).forEach((ms) => Object.entries(ms).forEach(([m, s]) => agregar(totCart, m, [...s])));
   const compran = (ven, m) => (porMarca[ven] && porMarca[ven][m] ? porMarca[ven][m].size : 0);
-  // articulos distintos vendidos en el periodo contra los que hay con stock hoy
-  const artVend = {}, stock = datos.stock || {};
-  enPer.forEach((f) => Object.entries((datos.articulos_dia || {})[f] || {}).forEach(([m, its]) => agregar(artVend, m, its)));
+  const stock = datos.stock || {};   // articulos con stock disponible hoy, por marca
   const nCart = (m) => (totCart[m] ? totCart[m].size : 0);
   const marcas = MARCAS.map(([k]) => k).filter((k) => totCart[k] || (stock[k] || []).length)
     .sort((a, b2) => nCart(b2) - nCart(a) || (totMarca[b2] ? totMarca[b2].size : 0) - (totMarca[a] ? totMarca[a].size : 0));
@@ -455,11 +453,10 @@ function vistaCobertura() {
   hr.append(el('th', 'vend', 'Vendedor'), (() => { const x = el('th', 'num'); x.append(el('span', 'v', 'Clientes con compra'), el('small', null, String(todos.size))); return x; })());
   marcas.forEach((m) => {
     const x = el('th', 'num');
-    x.append(el('span', 'v', NOMBRE[m] || m), el('small', null, `${totMarca[m] ? totMarca[m].size : 0}/${nCart(m)} cli.`));
+    x.append(el('span', 'v', NOMBRE[m] || m));
     if (datos.stock) {
-      const vend = artVend[m] || new Set(), surt = new Set([...(stock[m] || []), ...vend]);
-      const art = el('small', 'art', `${vend.size}/${surt.size} art.`);
-      art.title = 'Artículos distintos vendidos en el período / artículos con stock hoy, más los vendidos que hoy no tienen stock';
+      const art = el('small', 'art', `${(stock[m] || []).length} art.`);
+      art.title = 'Artículos con stock disponible hoy';
       x.append(art);
     }
     hr.append(x);
@@ -485,7 +482,7 @@ function vistaCobertura() {
   const ley = el('div', 'legend');
   [['good', '50 % o más'], ['warn', '25 % a 49 %'], ['bad', 'Menos de 25 %']].forEach(([c, txt]) => { const s = el('span'); s.append(el('i', 'dot ' + c), txt); ley.append(s); });
   const h = encabezado('Cobertura · ' + (cPer ? nombrePeriodo(cPer, cAgr) : ''),
-    `Cartera de cada marca: los clientes que se la compraron a ese vendedor de ${refTexto()}, más los nuevos del período. Cada celda dice cuántos de esa cartera compraron la marca en el período (por fecha de carga). Arriba de cada marca: clientes que compraron / cartera, y artículos distintos vendidos en el período / artículos con stock disponible hoy (más los vendidos que se quedaron sin stock). Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.`);
+    `Cartera de cada marca: los clientes que se la compraron a ese vendedor de ${refTexto()}, más los nuevos del período. Cada celda dice cuántos de esa cartera compraron la marca en el período (por fecha de carga). Arriba de cada marca, la cantidad de artículos con stock disponible hoy. Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.`);
   h.append(ley);
   v.replaceChildren(ctl, h, vendedores.length ? sc : el('p', 'vacio', 'No hay ventas en este período.'));
 }
