@@ -218,7 +218,7 @@ def cobertura_dia(ym, arts):
     y, m = map(int, ym.split("-"))
     desde, hasta = f"{ym}-01", f"{ym}-{calendar.monthrange(y, m)[1]:02d}"
     acc = defaultdict(float)
-    arts_dia = defaultdict(float)   # (fecha, marca, articulo) -> neto
+    arts_dia = defaultdict(float)   # (fecha, vendedor, marca, articulo) -> neto
     for prov in PROVEEDORES:
         for l in base_get("/api/lineas-proveedor", proveedor=prov, desde=desde, hasta=hasta, por="pedido"):
             emp = cod(l.get("emp"))
@@ -228,16 +228,16 @@ def cobertura_dia(ym, arts):
                 continue
             neto = float(l.get("neto") or 0) * (1 if l.get("tipo") in SUMAN else -1)
             acc[(fecha, cod(l.get("ven")), marca_de(art), cod(l.get("cli")))] += neto
-            arts_dia[(fecha, marca_de(art), cod(art.get("codigo")))] += neto
+            arts_dia[(fecha, cod(l.get("ven")), marca_de(art), cod(art.get("codigo")))] += neto
     out = defaultdict(lambda: defaultdict(dict))
     for (f, ven, marca, cli), n in sorted(acc.items()):
         if n > 0:
             out[f][ven].setdefault(marca, []).append(cli)
-    # articulos distintos vendidos por dia de carga y marca, para comparar con los que hay en stock
-    vendidos = defaultdict(dict)
-    for (f, marca, item), n in sorted(arts_dia.items()):
+    # articulos distintos vendidos por dia de carga, vendedor y marca, para comparar con los que hay en stock
+    vendidos = defaultdict(lambda: defaultdict(dict))
+    for (f, ven, marca, item), n in sorted(arts_dia.items()):
         if n > 0:
-            vendidos[f].setdefault(marca, []).append(item)
+            vendidos[f][ven].setdefault(marca, []).append(item)
     return out, vendidos
 
 

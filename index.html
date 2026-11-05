@@ -142,6 +142,7 @@ tr.sel td{background:var(--accent-soft)}
 .matriz th.num .v{display:block; writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap; margin:0 auto; font:600 11.5px "IBM Plex Sans"; color:var(--text); max-height:150px; overflow:hidden; text-overflow:ellipsis}
 .matriz th.num small{display:block; text-align:center; margin-top:6px; font:500 11px "IBM Plex Mono",monospace; color:var(--muted)}
 .matriz th.num small.art{color:var(--accent, var(--muted))}
+.matriz td.cv span.art{display:block; color:var(--accent, var(--muted))}
 .matriz .vend{position:sticky; left:0; z-index:1; background:var(--panel); text-align:left; min-width:170px; padding:8px 10px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); font-family:"IBM Plex Sans"}
 .matriz th.vend{z-index:3; font:600 11px "IBM Plex Mono",monospace; letter-spacing:.06em; text-transform:uppercase; color:var(--muted)}
 .matriz td.vend b{display:block; font-weight:600}
@@ -440,11 +441,19 @@ function vistaCobertura() {
   }
 
   const nivel = (p) => (p >= 0.5 ? 'good' : p >= 0.25 ? 'warn' : 'bad');
-  const celda = (n, d) => {
+  // articulos distintos que vendio cada vendedor de cada marca en el periodo
+  const artVen = {}, artTot = {};
+  enPer.forEach((f) => Object.entries((datos.articulos_dia || {})[f] || {}).forEach(([ven, ms]) => {
+    if (SIN_COB.includes(ven) || Array.isArray(ms)) return;   // los datos viejos venian sin vendedor
+    Object.entries(ms).forEach(([m, its]) => { agregar(artVen[ven] || (artVen[ven] = {}), m, its); agregar(artTot, m, its); });
+  }));
+  const conArt = Object.keys(artTot).length > 0;
+  const celda = (n, d, arts) => {
     if (!d) return el('td', 'cv vacia', '—');
     const p = n / d;
     const td = el('td', 'cv ' + nivel(p));
     td.append(el('b', null, fPct(p)), el('span', null, `${n}/${d}`));
+    if (conArt) td.append(el('span', 'art', `${arts} art.`));
     return td;
   };
   const sc = el('div', 'table-scroll tall matriz-wrap');
@@ -469,12 +478,13 @@ function vistaCobertura() {
     const nom = el('td', 'vend');
     nom.append(el('b', null, datos.facturacion.nombres[ven] || 'Vendedor ' + ven), el('span', null, money.format(fact[ven] || 0)));
     tr.append(nom, el('td', 'cv base', String(base[ven] ? base[ven].size : 0)));
-    marcas.forEach((m) => tr.append(celda(compran(ven, m), cart[ven] && cart[ven][m] ? cart[ven][m].size : 0)));
+    marcas.forEach((m) => tr.append(celda(compran(ven, m), cart[ven] && cart[ven][m] ? cart[ven][m].size : 0,
+      artVen[ven] && artVen[ven][m] ? artVen[ven][m].size : 0)));
     tb.append(tr);
   });
   const trT = el('tr', 'total');
   trT.append(el('td', 'vend', 'Total'), el('td', 'cv base', String(todos.size)));
-  marcas.forEach((m) => trT.append(celda(totMarca[m] ? totMarca[m].size : 0, nCart(m))));
+  marcas.forEach((m) => trT.append(celda(totMarca[m] ? totMarca[m].size : 0, nCart(m), artTot[m] ? artTot[m].size : 0)));
   tb.append(trT);
   t.append(th, tb);
   sc.append(t);
@@ -482,7 +492,7 @@ function vistaCobertura() {
   const ley = el('div', 'legend');
   [['good', '50 % o más'], ['warn', '25 % a 49 %'], ['bad', 'Menos de 25 %']].forEach(([c, txt]) => { const s = el('span'); s.append(el('i', 'dot ' + c), txt); ley.append(s); });
   const h = encabezado('Cobertura · ' + (cPer ? nombrePeriodo(cPer, cAgr) : ''),
-    `Cartera de cada marca: los clientes que se la compraron a ese vendedor de ${refTexto()}, más los nuevos del período. Cada celda dice cuántos de esa cartera compraron la marca en el período (por fecha de carga). Arriba de cada marca, la cantidad de artículos con stock disponible hoy. Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.`);
+    `Cartera de cada marca: los clientes que se la compraron a ese vendedor de ${refTexto()}, más los nuevos del período. Cada celda dice cuántos de esa cartera compraron la marca en el período (por fecha de carga). Abajo, en cada celda, cuántos artículos distintos de la marca vendió en el período; arriba de cada marca, la cantidad de artículos con stock disponible hoy. Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.`);
   h.append(ley);
   v.replaceChildren(ctl, h, vendedores.length ? sc : el('p', 'vacio', 'No hay ventas en este período.'));
 }
