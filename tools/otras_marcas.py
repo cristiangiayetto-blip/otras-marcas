@@ -79,7 +79,10 @@ PROVEEDORES = {
 ACTIVAS = set(MARCAS)
 STOCK = {}
 # Objetivo fijo de venta por vendedor (neto sin IVA, por mes) en lugar del promedio: pedido del 5/11/2026.
-OBJETIVO_FIJO = {"FECOVITA": 25000, "L3N": 450000}
+OBJETIVO_FIJO = {
+    "FECOVITA": 25000, "L3N": 450000,
+    "PILAGA": {"11": 300000, "7": 250000, "2": 200000},   # Melanie Larrama, Ramiro Rando y Julian Nuñez; el resto, el promedio
+}
 STOCK_MINIMO = 10   # un articulo cuenta como "con stock" si tiene mas de 10 unidades (sumando depositos)
 SUMAN = {"VEN", "DEB"}
 EMPRESAS = [("1", "Tienda Perfecta"), ("2", "Rambla de los Lobos"), ("99", "X")]
@@ -266,16 +269,21 @@ def fijar_objetivos(marcas, vend):
     def rehacer(r, objetivo):
         r.update(fila(objetivo, r["venta"], r["cob_obj"], r["cob_act"]))
     for marca, fijo in OBJETIVO_FIJO.items():
-        filas = [r for r in vend if r["marca"] == marca]
-        if not filas:
+        # un monto para todos los vendedores, o {vendedor: monto} solo para algunos (los demas siguen con el promedio)
+        por_ven = fijo if isinstance(fijo, dict) else None
+        filas = [r for r in vend if r["marca"] == marca and (por_ven is None or r["ven"] in por_ven)]
+        m = next((r for r in marcas if r["marca"] == marca and r["sub"] == "Total"), None)
+        if not filas or not m:
             continue
+        dif = 0
         for r in filas:
+            obj = por_ven[r["ven"]] if por_ven else fijo
             tot = next(t for t in vend if t["ven"] == r["ven"] and t["marca"] == "TOTAL")
-            rehacer(tot, tot["objetivo"] - r["objetivo"] + fijo)
-            rehacer(r, fijo)
-        m = next(r for r in marcas if r["marca"] == marca and r["sub"] == "Total")
+            rehacer(tot, tot["objetivo"] - r["objetivo"] + obj)
+            dif += obj - r["objetivo"]
+            rehacer(r, obj)
         t = next(r for r in marcas if r["marca"] == "TOTAL")
-        nuevo = fijo * len(filas)
+        nuevo = m["objetivo"] + dif if por_ven else fijo * len(filas)
         rehacer(t, t["objetivo"] - m["objetivo"] + nuevo)
         rehacer(m, nuevo)
 
