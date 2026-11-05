@@ -218,6 +218,7 @@ def cobertura_dia(ym, arts):
     y, m = map(int, ym.split("-"))
     desde, hasta = f"{ym}-01", f"{ym}-{calendar.monthrange(y, m)[1]:02d}"
     acc = defaultdict(float)
+    arts_dia = defaultdict(float)   # (fecha, marca, articulo) -> neto
     for prov in PROVEEDORES:
         for l in base_get("/api/lineas-proveedor", proveedor=prov, desde=desde, hasta=hasta, por="pedido"):
             emp = cod(l.get("emp"))
@@ -227,11 +228,31 @@ def cobertura_dia(ym, arts):
                 continue
             neto = float(l.get("neto") or 0) * (1 if l.get("tipo") in SUMAN else -1)
             acc[(fecha, cod(l.get("ven")), marca_de(art), cod(l.get("cli")))] += neto
+            arts_dia[(fecha, marca_de(art), cod(art.get("codigo")))] += neto
     out = defaultdict(lambda: defaultdict(dict))
     for (f, ven, marca, cli), n in sorted(acc.items()):
         if n > 0:
             out[f][ven].setdefault(marca, []).append(cli)
-    return out
+    # articulos distintos vendidos por dia de carga y marca, para comparar con los que hay en stock
+    vendidos = defaultdict(dict)
+    for (f, marca, item), n in sorted(arts_dia.items()):
+        if n > 0:
+            vendidos[f].setdefault(marca, []).append(item)
+    return out, vendidos
+
+
+def stock_por_marca(arts):
+    """Articulos con stock disponible (> 0, sumando depositos) de cada marca: {marca: [codigos]}.
+    Es la foto que guardo el robot de la base; el stock no viene por empresa: se busca el articulo en la 1 y en la 2."""
+    out = defaultdict(set)
+    for s in base_get("/gescom/data/cmd/inventario/api/v1/get-stock"):
+        item = cod(s.get("codigoItem"))
+        if sum(float(x.get("cantidad") or 0) for x in s.get("stock") or []) <= 0:
+            continue
+        art = arts.get((item, "1")) or arts.get((item, "2"))
+        if art and marca_de(art):
+            out[marca_de(art)].add(item)
+    return {m: sorted(v) for m, v in sorted(out.items())}
 
 
 def armar_mes(ym, hoy, arts, vendedores, datos_al):
@@ -297,11 +318,13 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
             cartera[ven][marca] = clis
 
     hab_mes, hab_hoy = habiles(ym, hoy)
+    cob_dia, arts_dia = cobertura_dia(ym, arts)
     return {
         "mes": ym, "mes_ant": ref[-1], "meses_ref": ref, "hoy": hoy.isoformat(),
         "habiles_mes": hab_mes, "habiles_hasta_hoy": hab_hoy, "datos_al": datos_al,
         "marcas": marcas, "vendedores": vend, "facturacion": facturacion(ym, vendedores),
-        "cobertura_dia": cobertura_dia(ym, arts), "cartera": cartera,
+        "cobertura_dia": cob_dia, "articulos_dia": arts_dia, "cartera": cartera,
+        "stock": stock_por_marca(arts) if ym == hoy.strftime("%Y-%m") else None,
     }
 
 
