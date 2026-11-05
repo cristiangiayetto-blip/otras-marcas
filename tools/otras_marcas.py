@@ -78,6 +78,8 @@ PROVEEDORES = {
 # Las de MARCAS que hoy tienen stock: se arma en main con la foto de stock de la base.
 ACTIVAS = set(MARCAS)
 STOCK = {}
+# Objetivo fijo de venta por vendedor (neto sin IVA, por mes) en lugar del promedio: pedido del 5/11/2026.
+OBJETIVO_FIJO = {"FECOVITA": 25000}
 STOCK_MINIMO = 10   # un articulo cuenta como "con stock" si tiene mas de 10 unidades (sumando depositos)
 SUMAN = {"VEN", "DEB"}
 EMPRESAS = [("1", "Tienda Perfecta"), ("2", "Rambla de los Lobos"), ("99", "X")]
@@ -257,6 +259,27 @@ def stock_por_marca(arts):
     return {m: sorted(v) for m, v in sorted(out.items())}
 
 
+def fijar_objetivos(marcas, vend):
+    """Marcas con objetivo fijo por vendedor (OBJETIVO_FIJO) en vez del promedio de los meses anteriores.
+    El objetivo de la marca pasa a ser el fijo por la cantidad de vendedores de la tabla, y los totales se corrigen
+    con la diferencia. La cobertura objetivo no cambia."""
+    def rehacer(r, objetivo):
+        r.update(fila(objetivo, r["venta"], r["cob_obj"], r["cob_act"]))
+    for marca, fijo in OBJETIVO_FIJO.items():
+        filas = [r for r in vend if r["marca"] == marca]
+        if not filas:
+            continue
+        for r in filas:
+            tot = next(t for t in vend if t["ven"] == r["ven"] and t["marca"] == "TOTAL")
+            rehacer(tot, tot["objetivo"] - r["objetivo"] + fijo)
+            rehacer(r, fijo)
+        m = next(r for r in marcas if r["marca"] == marca and r["sub"] == "Total")
+        t = next(r for r in marcas if r["marca"] == "TOTAL")
+        nuevo = fijo * len(filas)
+        rehacer(t, t["objetivo"] - m["objetivo"] + nuevo)
+        rehacer(m, nuevo)
+
+
 def armar_mes(ym, hoy, arts, vendedores, datos_al):
     ref = meses_ref(ym)
     n_ref = len(ref)
@@ -310,6 +333,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
             v = (ven_total if marca == "TOTAL" else por_ven).get((ven, marca))
             vend.append({"ven": ven, "vendedor": vendedores.get(ven) or f"Vendedor {ven}", "marca": marca,
                          **(resumir(v, n_ref) if v else vacia)})
+    fijar_objetivos(marcas, vend)
     vend.sort(key=lambda r: (r["marca"], -r["objetivo"]))
 
     # cartera de cada marca por vendedor: clientes con compra neta en alguno de los meses de referencia

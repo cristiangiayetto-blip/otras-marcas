@@ -196,6 +196,7 @@ const activas = () => (datos && datos.marcas_activas ? MARCAS.filter(([k]) => da
 const NOMBRE = Object.fromEntries(MARCAS.map(([k, n]) => [k, n]));
 const SLUG = Object.fromEntries(MARCAS.map(([k, , s]) => [k, s]));
 const DE_SLUG = Object.fromEntries(MARCAS.map(([k, , s]) => [s, k]));
+const OBJ_FIJO = { FECOVITA: 25000 };   // igual que OBJETIVO_FIJO del script
 const DETALLE = { LCB: 'LCB (Tayal)', LAGOPUELO: 'Lagopuelo (Hileret)' };
 const FACT = 'FACTURACION', COB = 'COBERTURA';
 SLUG[FACT] = 'facturacion';
@@ -362,7 +363,7 @@ function vistaMarca(m) {
   const subs = datos.marcas.filter((x) => x.marca === m && x.sub !== 'Total').map((x) => ({ nombre: x.sub, d: x }));
   if (subs.length) partes.push(encabezado('Por submarca', null, true), tabla('Submarca', [{ nombre: 'Total', d, cls: 'total' }, ...subs]));
   const vend = datos.vendedores.filter((x) => x.marca === m).map((x) => ({ nombre: x.vendedor, d: x }));
-  partes.push(encabezado('Por vendedor', 'El objetivo de cada vendedor es su promedio mensual de la marca en ' + refTexto() + '. Aparecen todos los vendedores, aunque no la vendan.', !subs.length),
+  partes.push(encabezado('Por vendedor', (OBJ_FIJO[m] ? `El objetivo es fijo: ${money.format(OBJ_FIJO[m])} por vendedor por mes (neto sin IVA); el de la marca es la suma.` : 'El objetivo de cada vendedor es su promedio mensual de la marca en ' + refTexto() + '.') + ' Aparecen todos los vendedores, aunque no la vendan.', !subs.length),
     tabla('Vendedor', vend, { alto: true, vacio: 'No hay vendedores con venta en estos meses.' }));
   v.replaceChildren(...partes);
 }
