@@ -78,6 +78,7 @@ PROVEEDORES = {
 # Las de MARCAS que hoy tienen stock: se arma en main con la foto de stock de la base.
 ACTIVAS = set(MARCAS)
 STOCK = {}
+STOCK_DETALLE = {}   # {marca: [[codigo, descripcion, unidades]]}, todo lo que tiene stock > 0
 # Objetivo fijo de venta por vendedor (neto sin IVA, por mes) en lugar del promedio: pedido del 5/11/2026.
 OBJETIVO_FIJO = {
     "FECOVITA": 25000, "L3N": 450000,
@@ -254,11 +255,16 @@ def stock_por_marca(arts):
     out = defaultdict(set)
     for s in base_get("/gescom/data/cmd/inventario/api/v1/get-stock"):
         item = cod(s.get("codigoItem"))
-        if sum(float(x.get("cantidad") or 0) for x in s.get("stock") or []) <= STOCK_MINIMO:
-            continue
+        cant = sum(float(x.get("cantidad") or 0) for x in s.get("stock") or [])
         art = arts.get((item, "1")) or arts.get((item, "2"))
-        if art and marca_base(art):
+        if not art or not marca_base(art) or cant <= 0:
+            continue
+        # detalle de todo lo que tiene stock (aunque sea poco), para consultar que mercaderia hay de cada marca
+        STOCK_DETALLE.setdefault(marca_base(art), []).append([item, (art.get("descripcion") or "").strip(), round(cant)])
+        if cant > STOCK_MINIMO:
             out[marca_base(art)].add(item)
+    for v in STOCK_DETALLE.values():
+        v.sort(key=lambda x: -x[2])
     return {m: sorted(v) for m, v in sorted(out.items())}
 
 
@@ -358,7 +364,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
         "habiles_mes": hab_mes, "habiles_hasta_hoy": hab_hoy, "datos_al": datos_al,
         "marcas": marcas, "vendedores": vend, "facturacion": facturacion(ym, vendedores),
         "cobertura_dia": cob_dia, "articulos_dia": arts_dia, "cartera": cartera,
-        "stock": STOCK, "marcas_activas": [m for m in MARCAS if m in ACTIVAS],
+        "stock": STOCK, "stock_detalle": STOCK_DETALLE, "marcas_activas": [m for m in MARCAS if m in ACTIVAS],
     }
 
 
