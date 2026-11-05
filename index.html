@@ -457,8 +457,9 @@ function vistaCobertura() {
     const x = el('th', 'num');
     x.append(el('span', 'v', NOMBRE[m] || m), el('small', null, `${totMarca[m] ? totMarca[m].size : 0}/${nCart(m)} cli.`));
     if (datos.stock) {
-      const art = el('small', 'art', `${artVend[m] ? artVend[m].size : 0}/${(stock[m] || []).length} art.`);
-      art.title = 'Artículos distintos vendidos en el período / artículos con stock disponible hoy';
+      const vend = artVend[m] || new Set(), surt = new Set([...(stock[m] || []), ...vend]);
+      const art = el('small', 'art', `${vend.size}/${surt.size} art.`);
+      art.title = 'Artículos distintos vendidos en el período / artículos con stock hoy, más los vendidos que hoy no tienen stock';
       x.append(art);
     }
     hr.append(x);
@@ -484,7 +485,7 @@ function vistaCobertura() {
   const ley = el('div', 'legend');
   [['good', '50 % o más'], ['warn', '25 % a 49 %'], ['bad', 'Menos de 25 %']].forEach(([c, txt]) => { const s = el('span'); s.append(el('i', 'dot ' + c), txt); ley.append(s); });
   const h = encabezado('Cobertura · ' + (cPer ? nombrePeriodo(cPer, cAgr) : ''),
-    `Cartera de cada marca: los clientes que se la compraron a ese vendedor de ${refTexto()}, más los nuevos del período. Cada celda dice cuántos de esa cartera compraron la marca en el período (por fecha de carga). Arriba de cada marca: clientes que compraron / cartera, y artículos distintos vendidos en el período / artículos con stock disponible hoy. Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.`);
+    `Cartera de cada marca: los clientes que se la compraron a ese vendedor de ${refTexto()}, más los nuevos del período. Cada celda dice cuántos de esa cartera compraron la marca en el período (por fecha de carga). Arriba de cada marca: clientes que compraron / cartera, y artículos distintos vendidos en el período / artículos con stock disponible hoy (más los vendidos que se quedaron sin stock). Debajo del nombre, lo que facturó. Sin Pepsico ni Georgalos.`);
   h.append(ley);
   v.replaceChildren(ctl, h, vendedores.length ? sc : el('p', 'vacio', 'No hay ventas en este período.'));
 }
