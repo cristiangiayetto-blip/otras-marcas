@@ -81,7 +81,7 @@ STOCK = {}
 # Objetivo fijo de venta por vendedor (neto sin IVA, por mes) en lugar del promedio: pedido del 5/11/2026.
 OBJETIVO_FIJO = {
     "FECOVITA": 25000, "L3N": 450000,
-    "PILAGA": {"11": 300000, "7": 250000, "2": 200000},   # Melanie Larrama, Ramiro Rando y Julian Nuñez; el resto, el promedio
+    "PILAGA": {"11": 300000, "7": 250000, "2": 200000, "10": 200000},   # Melanie Larrama, Ramiro Rando, Julian Nuñez y Matias Parada; el resto, el promedio
 }
 STOCK_MINIMO = 10   # un articulo cuenta como "con stock" si tiene mas de 10 unidades (sumando depositos)
 SUMAN = {"VEN", "DEB"}

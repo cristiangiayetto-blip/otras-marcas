@@ -196,7 +196,7 @@ const activas = () => (datos && datos.marcas_activas ? MARCAS.filter(([k]) => da
 const NOMBRE = Object.fromEntries(MARCAS.map(([k, n]) => [k, n]));
 const SLUG = Object.fromEntries(MARCAS.map(([k, , s]) => [k, s]));
 const DE_SLUG = Object.fromEntries(MARCAS.map(([k, , s]) => [s, k]));
-const OBJ_FIJO = { FECOVITA: 25000, L3N: 450000, PILAGA: { txt: 'Fijos: Melanie Larrama $ 300.000, Ramiro Rando $ 250.000 y Julian Nuñez $ 200.000.' } };   // igual que OBJETIVO_FIJO del script
+const OBJ_FIJO = { FECOVITA: 25000, L3N: 450000, PILAGA: { txt: 'Fijos: Melanie Larrama $ 300.000, Ramiro Rando $ 250.000, Julian Nuñez $ 200.000 y Matías Parada $ 200.000.' } };   // igual que OBJETIVO_FIJO del script
 const DETALLE = { LCB: 'LCB (Tayal)', LAGOPUELO: 'Lagopuelo (Hileret)' };
 const FACT = 'FACTURACION', COB = 'COBERTURA';
 SLUG[FACT] = 'facturacion';
