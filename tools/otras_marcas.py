@@ -79,8 +79,7 @@ PROVEEDORES = {
 ACTIVAS = set(MARCAS)
 STOCK = {}
 PROV_ITEM = {}
-SIN_PROV = defaultdict(float)   # renglones sin proveedor en el catalogo (control)
-PG_EZE = defaultdict(float)            # (codigo, empresa) -> proveedor, de todos los articulos
+SIN_PROV = defaultdict(float)   # renglones sin proveedor en el catalogo (control)            # (codigo, empresa) -> proveedor, de todos los articulos
 SIN_FACT_COB = {"100", "101"}   # Pepsico y Georgalos: no van en la facturacion que muestra la Cobertura
 STOCK_DETALLE = {}   # {marca: [[codigo, descripcion, unidades]]}, todo lo que tiene stock > 0
 # Objetivo fijo de venta por vendedor (neto sin IVA, por mes) en lugar del promedio: pedido del 5/11/2026.
@@ -227,8 +226,6 @@ def facturacion(ym, vendedores):
                         SIN_PROV[c] += float(i.get("importeTotal") or 0)
                     if prov not in SIN_FACT_COB:
                         otros += float(i.get("importeTotal") or 0)
-                    elif cod(v.get("codigoVendedor")) == "3":
-                        PG_EZE[prov] += float(i.get("importeTotal") or 0)
                 sin_pg[(fecha, cod(v.get("codigoVendedor")))] += monto * (otros / todo if todo else 1)
     filas = [[f, ven, e, round(n)] for (f, ven, e), n in sorted(acc.items()) if round(n)]
     # clientes con compra neta de cualquier cosa, por dia de carga y vendedor
@@ -242,8 +239,8 @@ def facturacion(ym, vendedores):
         e["pct"] = round(e["total"] / total, 4) if total else None
     nombres = {ven: vendedores.get(ven) or f"Vendedor {ven}" for ven in sorted({f[1] for f in filas})}
     sin_pg = [[f, ven, round(n)] for (f, ven), n in sorted(sin_pg.items()) if round(n)]
-    print(f"{ym}: renglones sin proveedor {len(SIN_PROV)} articulos, $ {sum(SIN_PROV.values()):,.0f};",
-          sorted(SIN_PROV.items(), key=lambda x: -x[1])[:5], "pg vend 3:", dict(PG_EZE))
+    print(f"{ym}: renglones sin proveedor (conceptos, no mercaderia) {len(SIN_PROV)} articulos, $ {sum(SIN_PROV.values()):,.0f};",
+          sorted(SIN_PROV.items(), key=lambda x: -x[1])[:5])
     return {"total": total, "empresas": empresas, "filas": filas, "nombres": nombres, "clientes": clientes, "sin_pg": sin_pg}
 
 
