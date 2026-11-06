@@ -175,7 +175,7 @@ tr.sel td{background:var(--accent-soft)}
 
   <section id="vista" aria-live="polite"></section>
 
-  <p class="foot-note">Venta: importe neto sin IVA, por fecha de entrega, con las devoluciones restadas. Objetivo: el promedio mensual de lo vendido en los 3 meses anteriores (o los que haya en la base); la cobertura objetivo es el promedio de clientes por mes de esos meses.
+  <p class="foot-note">Venta: importe con IVA, por fecha de entrega, con las devoluciones restadas. Objetivo: el promedio mensual de lo vendido en los 3 meses anteriores (o los que haya en la base); la cobertura objetivo es el promedio de clientes por mes de esos meses.
     Cobertura (en su solapa): clientes con compra neta en el mes; el total cuenta cada cliente una sola vez aunque compre varias marcas.
     Ritmo: días hábiles de lunes a sábado transcurridos sobre los del mes.
     Facturación: todas las marcas, importe total con IVA, ventas y notas de débito menos devoluciones, por fecha de carga del pedido. Fuente: base propia de Gescom.</p>
@@ -369,7 +369,7 @@ function vistaMarca(m) {
   const subs = datos.marcas.filter((x) => x.marca === m && x.sub !== 'Total').map((x) => ({ nombre: x.sub, d: x })).sort(porRendimiento);
   if (subs.length) partes.push(encabezado('Por submarca', null, true), tabla('Submarca', [{ nombre: 'Total', d, cls: 'total' }, ...subs]));
   const vend = datos.vendedores.filter((x) => x.marca === m).map((x) => ({ nombre: x.vendedor, d: x })).sort(porRendimiento);
-  partes.push(encabezado('Por vendedor', (typeof OBJ_FIJO[m] === 'number' ? `El objetivo es fijo: ${money.format(OBJ_FIJO[m])} por vendedor por mes (neto sin IVA); el de la marca es la suma.` : 'El objetivo de cada vendedor es su promedio mensual de la marca en ' + refTexto() + '.' + (OBJ_FIJO[m] ? ' ' + OBJ_FIJO[m].txt : '')) + ' Aparecen todos los vendedores, aunque no la vendan.', !subs.length),
+  partes.push(encabezado('Por vendedor', (typeof OBJ_FIJO[m] === 'number' ? `El objetivo es fijo: ${money.format(OBJ_FIJO[m])} por vendedor por mes (con IVA); el de la marca es la suma.` : 'El objetivo de cada vendedor es su promedio mensual de la marca en ' + refTexto() + '.' + (OBJ_FIJO[m] ? ' ' + OBJ_FIJO[m].txt : '')) + ' Aparecen todos los vendedores, aunque no la vendan.', !subs.length),
     tabla('Vendedor', vend, { alto: true, vacio: 'No hay vendedores con venta en estos meses.' }));
   v.replaceChildren(...partes);
 }
@@ -411,9 +411,9 @@ function vistaCobertura() {
 
   // facturacion del vendedor en el periodo, debajo del nombre
   const fact = {};
-  // sin Pepsico ni Georgalos (sin_pg); si el mes todavia no lo trae, la facturacion total
-  const sinPg = datos.facturacion && datos.facturacion.sin_pg;
-  if (sinPg) sinPg.forEach(([f, ven, n]) => { if (enPerSet.has(f)) fact[ven] = (fact[ven] || 0) + n; });
+  // solo las marcas del panel, con IVA (panel); si el mes todavia no lo trae, la facturacion total
+  const delPanel = datos.facturacion && datos.facturacion.panel;
+  if (delPanel) delPanel.forEach(([f, ven, n]) => { if (enPerSet.has(f)) fact[ven] = (fact[ven] || 0) + n; });
   else ((datos.facturacion && datos.facturacion.filas) || []).forEach(([f, ven, , n]) => { if (enPerSet.has(f)) fact[ven] = (fact[ven] || 0) + n; });
   const nombres = (datos.facturacion && datos.facturacion.nombres) || {};
   const vendedores = [...new Set([...Object.keys(fact), ...Object.keys(artVen)])]
@@ -481,7 +481,7 @@ function vistaCobertura() {
   [['good', '50 % o más'], ['warn', '25 % a 49 %'], ['bad', 'Menos de 25 %']].forEach(([c, txt]) => { const s = el('span'); s.append(el('i', 'dot ' + c), txt); ley.append(s); });
   const titulo = cDia ? diaSel(cDia) : cSem ? 'semana ' + ctl.querySelectorAll('select')[2].selectedOptions[0].text : nombreMes(mes);
   const h = encabezado('Cobertura · ' + titulo,
-    'Arriba de cada marca, cuántos artículos tiene con más de 10 unidades en stock hoy (más los vendidos en el período que se quedaron sin stock). Cada celda dice cuántos de esos artículos vendió el vendedor en el período (por fecha de carga). Debajo del nombre, lo que facturó en el período sin Pepsico ni Georgalos (con IVA, por fecha de carga). Sin Pepsico ni Georgalos en las columnas.');
+    'Arriba de cada marca, cuántos artículos tiene con más de 10 unidades en stock hoy (más los vendidos en el período que se quedaron sin stock). Cada celda dice cuántos de esos artículos vendió el vendedor en el período (por fecha de carga). Debajo del nombre, lo que facturó en el período de las marcas del panel (con IVA, por fecha de carga). Sin Pepsico ni Georgalos en las columnas.');
   h.append(ley);
   v.replaceChildren(ctl, h, vendedores.length && marcas.length ? sc : el('p', 'vacio', 'No hay ventas en este período.'));
   if (ultimo === undefined) v.replaceChildren(ctl, el('p', 'vacio', 'Todavía no hay artículos por día cargados para este mes.'));

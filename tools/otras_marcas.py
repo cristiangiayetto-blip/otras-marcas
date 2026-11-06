@@ -78,11 +78,15 @@ PROVEEDORES = {
 # Las de MARCAS que hoy tienen stock: se arma en main con la foto de stock de la base.
 ACTIVAS = set(MARCAS)
 STOCK = {}
-PROV_ITEM = {}
-SIN_PROV = defaultdict(float)   # renglones sin proveedor en el catalogo (control)            # (codigo, empresa) -> proveedor, de todos los articulos
-SIN_FACT_COB = {"100", "101"}   # Pepsico y Georgalos: no van en la facturacion que muestra la Cobertura
+# Todo el panel va CON IVA (pedido del 6/11/2026). Los renglones de /api/lineas-proveedor traen el neto: se
+# multiplica por el factor total/neto de cada articulo, sacado de los comprobantes (meses/iva.json lo guarda
+# entre corridas para los articulos que no se vendieron en los meses que se bajan).
+IVA = {}                  # codigo de articulo -> factor total/neto
+IVA_DEFECTO = 1.21
+SIN_FACTOR = set()        # articulos sin factor conocido (control)
+VENTAS = {}               # mes -> comprobantes de /api/ventas por fecha de carga (se bajan una vez por corrida)
 STOCK_DETALLE = {}   # {marca: [[codigo, descripcion, unidades]]}, todo lo que tiene stock > 0
-# Objetivo fijo de venta por vendedor (neto sin IVA, por mes) en lugar del promedio: pedido del 5/11/2026.
+# Objetivo fijo de venta por vendedor (con IVA, por mes) en lugar del promedio: pedido del 5/11/2026.
 OBJETIVO_FIJO = {
     "FECOVITA": 25000, "L3N": 450000, "PEHUENIAS": 25000, "FUTURE BEVERAGES": 20000,
     "PILAGA": {"11": 300000, "7": 250000, "2": 200000, "10": 200000},   # Melanie Larrama, Ramiro Rando, Julian Nuñez y Matias Parada; el resto, el promedio
@@ -144,7 +148,6 @@ def articulos():
     """(codigo, empresa) -> articulo de los proveedores del panel. La empresa 99 usa los de la 1."""
     arts = {}
     for a in base_get("/api/catalogo/articulos"):
-        PROV_ITEM[(cod(a.get("codigo")), cod(a.get("codigoEmpresa")))] = cod(a.get("codigoProveedor"))
         if cod(a.get("codigoProveedor")) in PROVEEDORES:
             arts[(cod(a.get("codigo")), cod(a.get("codigoEmpresa")))] = a
     return arts
@@ -194,39 +197,64 @@ def resumir(neto_por_cli, n_ref):
     return fila(obj, act, cob_obj, cob_act)
 
 
-def facturacion(ym, vendedores):
+def ventas_mes(ym):
+    """Comprobantes del mes por fecha de carga, de a una semana (/api/ventas devuelve el JSON entero)."""
+    if ym not in VENTAS:
+        y, m = map(int, ym.split("-"))
+        ult = calendar.monthrange(y, m)[1]
+        VENTAS[ym] = [v for d1 in range(1, ult + 1, 7)
+                      for v in base_get("/api/ventas", desde=f"{ym}-{d1:02d}", hasta=f"{ym}-{min(d1 + 6, ult):02d}", por="pedido")]
+    return VENTAS[ym]
+
+
+def cargar_iva(meses):
+    """Factor total/neto por articulo: el guardado en meses/iva.json, actualizado con los comprobantes de estos meses."""
+    p = DIR / "meses" / "iva.json"
+    if p.exists():
+        IVA.update(json.loads(p.read_text(encoding="utf-8")))
+    acc = defaultdict(lambda: [0.0, 0.0])
+    for ym in meses:
+        for v in ventas_mes(ym):
+            for i in v.get("items") or []:
+                neto, total = float(i.get("importeNeto") or 0), float(i.get("importeTotal") or 0)
+                if neto > 0 and total > 0:
+                    a = acc[cod(i.get("codigoItem"))]
+                    a[0] += neto
+                    a[1] += total
+    for c, (neto, total) in acc.items():
+        IVA[c] = round(total / neto, 4)
+    p.write_text(json.dumps(dict(sorted(IVA.items())), separators=(",", ":")), encoding="utf-8")
+
+
+def con_iva(neto, item):
+    f = IVA.get(cod(item))
+    if f is None:
+        SIN_FACTOR.add(cod(item))
+        f = IVA_DEFECTO
+    return neto * f
+
+
+def facturacion(ym, vendedores, arts):
     """Facturacion total (todas las marcas) del mes ym por dia de carga, vendedor y empresa.
-    filas = [fecha, vendedor, empresa, monto]: la pagina arma con eso el dia, la semana o el mes."""
-    y, m = map(int, ym.split("-"))
-    ult = calendar.monthrange(y, m)[1]
+    filas = [fecha, vendedor, empresa, monto]: la pagina arma con eso el dia, la semana o el mes.
+    panel = [fecha, vendedor, monto]: solo los renglones de las marcas del panel, con IVA (para la Cobertura)."""
     acc = defaultdict(float)
     por_cli = defaultdict(float)   # (fecha, vendedor, cliente) -> total, para la cobertura
-    sin_pg = defaultdict(float)    # (fecha, vendedor) -> total sin los renglones de Pepsico y Georgalos
-    # de a una semana: /api/ventas devuelve el JSON entero de cada comprobante
-    for d1 in range(1, ult + 1, 7):
-        desde, hasta = f"{ym}-{d1:02d}", f"{ym}-{min(d1 + 6, ult):02d}"
-        for v in base_get("/api/ventas", desde=desde, hasta=hasta, por="pedido"):
-            tipo = cod(v.get("codigoTipoVenta"))
-            signo = 1 if tipo in SUMAN else -1 if tipo.startswith("DEV") else 0
-            fecha = (v.get("fechaPedido") or "")[:10]
-            if signo and fecha[:7] == ym:
-                monto = signo * float(v.get("importeTotal") or 0)
-                acc[(fecha, cod(v.get("codigoVendedor")), cod(v.get("codigoEmpresa")))] += monto
-                por_cli[(fecha, cod(v.get("codigoVendedor")), cod(v.get("codigoCliente")))] += monto
-                # parte del comprobante que no es Pepsico ni Georgalos, en proporcion a sus renglones
-                emp = cod(v.get("codigoEmpresa"))
-                items = v.get("items") or []
-                todo = sum(float(i.get("importeTotal") or 0) for i in items)
-                otros = 0
-                for i in items:
-                    c = cod(i.get("codigoItem"))
-                    prov = (PROV_ITEM.get((c, "1" if emp == "99" else emp)) or PROV_ITEM.get((c, "1"))
-                            or PROV_ITEM.get((c, "2")))
-                    if prov is None:
-                        SIN_PROV[c] += float(i.get("importeTotal") or 0)
-                    if prov not in SIN_FACT_COB:
-                        otros += float(i.get("importeTotal") or 0)
-                sin_pg[(fecha, cod(v.get("codigoVendedor")))] += monto * (otros / todo if todo else 1)
+    panel = defaultdict(float)     # (fecha, vendedor) -> renglones de las marcas del panel
+    for v in ventas_mes(ym):
+        tipo = cod(v.get("codigoTipoVenta"))
+        signo = 1 if tipo in SUMAN else -1 if tipo.startswith("DEV") else 0
+        fecha = (v.get("fechaPedido") or "")[:10]
+        if signo and fecha[:7] == ym:
+            monto = signo * float(v.get("importeTotal") or 0)
+            ven = cod(v.get("codigoVendedor"))
+            emp = cod(v.get("codigoEmpresa"))
+            acc[(fecha, ven, emp)] += monto
+            por_cli[(fecha, ven, cod(v.get("codigoCliente")))] += monto
+            for i in v.get("items") or []:
+                art = arts.get((cod(i.get("codigoItem")), "1" if emp == "99" else emp))
+                if art and marca_de(art):
+                    panel[(fecha, ven)] += signo * float(i.get("importeTotal") or 0)
     filas = [[f, ven, e, round(n)] for (f, ven, e), n in sorted(acc.items()) if round(n)]
     # clientes con compra neta de cualquier cosa, por dia de carga y vendedor
     clientes = defaultdict(dict)
@@ -238,10 +266,8 @@ def facturacion(ym, vendedores):
     for e in empresas:
         e["pct"] = round(e["total"] / total, 4) if total else None
     nombres = {ven: vendedores.get(ven) or f"Vendedor {ven}" for ven in sorted({f[1] for f in filas})}
-    sin_pg = [[f, ven, round(n)] for (f, ven), n in sorted(sin_pg.items()) if round(n)]
-    print(f"{ym}: renglones sin proveedor (conceptos, no mercaderia) {len(SIN_PROV)} articulos, $ {sum(SIN_PROV.values()):,.0f};",
-          sorted(SIN_PROV.items(), key=lambda x: -x[1])[:5])
-    return {"total": total, "empresas": empresas, "filas": filas, "nombres": nombres, "clientes": clientes, "sin_pg": sin_pg}
+    panel = [[f, ven, round(n)] for (f, ven), n in sorted(panel.items()) if round(n)]
+    return {"total": total, "empresas": empresas, "filas": filas, "nombres": nombres, "clientes": clientes, "panel": panel}
 
 
 def cobertura_dia(ym, arts):
@@ -258,7 +284,7 @@ def cobertura_dia(ym, arts):
             fecha = (l.get("fp") or "")[:10]
             if not art or cod(art.get("codigoProveedor")) != prov or fecha[:7] != ym or not marca_de(art):
                 continue
-            neto = float(l.get("neto") or 0) * (1 if l.get("tipo") in SUMAN else -1)
+            neto = con_iva(float(l.get("neto") or 0), l.get("item")) * (1 if l.get("tipo") in SUMAN else -1)
             acc[(fecha, cod(l.get("ven")), marca_de(art), cod(l.get("cli")))] += neto
             arts_dia[(fecha, cod(l.get("ven")), marca_de(art), cod(art.get("codigo")))] += neto
     out = defaultdict(lambda: defaultdict(dict))
@@ -338,7 +364,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
                 if fe not in ref and fe != ym:
                     continue
                 per = "act" if fe == ym else fe
-                neto = float(l.get("neto") or 0) * (1 if l.get("tipo") in SUMAN else -1)
+                neto = con_iva(float(l.get("neto") or 0), l.get("item")) * (1 if l.get("tipo") in SUMAN else -1)
                 acc[(marca_de(art), submarca_de(art), cod(l.get("ven")), per, cod(l.get("cli")))] += neto
 
     def juntar(clave):
@@ -386,7 +412,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
     return {
         "mes": ym, "mes_ant": ref[-1], "meses_ref": ref, "hoy": hoy.isoformat(),
         "habiles_mes": hab_mes, "habiles_hasta_hoy": hab_hoy, "datos_al": datos_al,
-        "marcas": marcas, "vendedores": vend, "facturacion": facturacion(ym, vendedores),
+        "marcas": marcas, "vendedores": vend, "facturacion": facturacion(ym, vendedores, arts),
         "cobertura_dia": cob_dia, "articulos_dia": arts_dia, "cartera": cartera,
         "stock": STOCK, "stock_detalle": STOCK_DETALLE, "marcas_activas": [m for m in MARCAS if m in ACTIVAS],
     }
@@ -412,13 +438,15 @@ def main(args):
     datos_al = max((c.get("inicio") or "" for c in corridas if c.get("estado") == "ok"), default=None)
 
     (DIR / "meses").mkdir(parents=True, exist_ok=True)
+    cargar_iva(meses)
     for ym in meses:
         datos = armar_mes(ym, hoy, arts, vendedores, datos_al)
         (DIR / "meses" / f"{ym}.json").write_text(json.dumps(datos, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         t = next(r for r in datos["marcas"] if r["marca"] == "TOTAL")
         print(f"{ym}: objetivo {t['objetivo']:,} venta {t['venta']:,} cobertura {t['cob_act']}/{t['cob_obj']}")
 
-    disponibles = sorted((p.stem for p in (DIR / "meses").glob("*.json")), reverse=True)
+    disponibles = sorted((p.stem for p in (DIR / "meses").glob("[0-9][0-9][0-9][0-9]-[0-9][0-9].json")), reverse=True)
+    print(f"Articulos sin factor de IVA conocido (se usa {IVA_DEFECTO}): {len(SIN_FACTOR)}", sorted(SIN_FACTOR)[:20])
     indice = {"meses": disponibles, "actualizado": dt.datetime.now(TZ_AR).isoformat(timespec="minutes")}
     (DIR / "indice.json").write_text(json.dumps(indice, ensure_ascii=False, indent=1), encoding="utf-8")
     (DIR / "fecha.txt").write_text(f"Ultima actualizacion: {hoy.isoformat()}\n", encoding="utf-8")
