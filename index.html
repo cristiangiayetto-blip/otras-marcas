@@ -196,8 +196,8 @@ const activas = () => (datos && datos.marcas_activas ? MARCAS.filter(([k]) => da
 const NOMBRE = Object.fromEntries(MARCAS.map(([k, n]) => [k, n]));
 const SLUG = Object.fromEntries(MARCAS.map(([k, , s]) => [k, s]));
 const DE_SLUG = Object.fromEntries(MARCAS.map(([k, , s]) => [s, k]));
-const OBJ_FIJO = { FECOVITA: 25000, L3N: 450000, PEHUENIAS: 25000, 'FUTURE BEVERAGES': 20000, PILAGA: { txt: 'Fijos: Melanie Larrama $ 300.000, Ramiro Rando $ 250.000, Julian Nuñez $ 200.000 y Matías Parada $ 200.000.' },
-  'ADECO AGRO': { txt: 'Fijos: Ramiro Rando $ 250.000, Camila Martinez $ 120.000, Melanie Larrama $ 120.000, Agustín Pogorzelski $ 100.000, Martinica Rodriguez $ 100.000, Ezequiel Hack $ 100.000 y María Noelia Madia $ 100.000.' } };   // igual que OBJETIVO_FIJO del script
+const OBJ_FIJO = { FECOVITA: 25000, L3N: 450000, PEHUENIAS: 25000, 'FUTURE BEVERAGES': 20000, PILAGA: { txt: 'Fijos: Melanie Larrama $ 300.000 + IVA, Ramiro Rando $ 250.000 + IVA, Julian Nuñez $ 200.000 + IVA y Matías Parada $ 200.000 + IVA.' },
+  'ADECO AGRO': { txt: 'Fijos: Ramiro Rando $ 250.000 + IVA, Camila Martinez $ 120.000 + IVA, Melanie Larrama $ 120.000 + IVA, Agustín Pogorzelski $ 100.000 + IVA, Martinica Rodriguez $ 100.000 + IVA, Ezequiel Hack $ 100.000 + IVA y María Noelia Madia $ 100.000 + IVA.' } };   // igual que OBJETIVO_FIJO del script
 const DETALLE = { LCB: 'LCB (Tayal)', LAGOPUELO: 'Lagopuelo (Hileret)' };
 const FACT = 'FACTURACION', COB = 'COBERTURA';
 SLUG[FACT] = 'facturacion';
@@ -369,7 +369,7 @@ function vistaMarca(m) {
   const subs = datos.marcas.filter((x) => x.marca === m && x.sub !== 'Total').map((x) => ({ nombre: x.sub, d: x })).sort(porRendimiento);
   if (subs.length) partes.push(encabezado('Por submarca', null, true), tabla('Submarca', [{ nombre: 'Total', d, cls: 'total' }, ...subs]));
   const vend = datos.vendedores.filter((x) => x.marca === m).map((x) => ({ nombre: x.vendedor, d: x })).sort(porRendimiento);
-  partes.push(encabezado('Por vendedor', (typeof OBJ_FIJO[m] === 'number' ? `El objetivo es fijo: ${money.format(OBJ_FIJO[m])} por vendedor por mes (con IVA); el de la marca es la suma.` : 'El objetivo de cada vendedor es su promedio mensual de la marca en ' + refTexto() + '.' + (OBJ_FIJO[m] ? ' ' + OBJ_FIJO[m].txt : '')) + ' Aparecen todos los vendedores, aunque no la vendan.', !subs.length),
+  partes.push(encabezado('Por vendedor', (typeof OBJ_FIJO[m] === 'number' ? `El objetivo es fijo: ${money.format(OBJ_FIJO[m])} más IVA por vendedor por mes; el de la marca es la suma.` : 'El objetivo de cada vendedor es su promedio mensual de la marca en ' + refTexto() + '.' + (OBJ_FIJO[m] ? ' ' + OBJ_FIJO[m].txt : '')) + ' Aparecen todos los vendedores, aunque no la vendan.', !subs.length),
     tabla('Vendedor', vend, { alto: true, vacio: 'No hay vendedores con venta en estos meses.' }));
   v.replaceChildren(...partes);
 }

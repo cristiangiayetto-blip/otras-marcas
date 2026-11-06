@@ -84,9 +84,10 @@ STOCK = {}
 IVA = {}                  # codigo de articulo -> factor total/neto
 IVA_DEFECTO = 1.21
 SIN_FACTOR = set()        # articulos sin factor conocido (control)
+FACTOR_MARCA = {}       # marca -> factor de IVA mas comun de sus articulos
 VENTAS = {}               # mes -> comprobantes de /api/ventas por fecha de carga (se bajan una vez por corrida)
 STOCK_DETALLE = {}   # {marca: [[codigo, descripcion, unidades]]}, todo lo que tiene stock > 0
-# Objetivo fijo de venta por vendedor (con IVA, por mes) en lugar del promedio: pedido del 5/11/2026.
+# Objetivo fijo de venta por vendedor (por mes). Se cargaron sin IVA: el script les suma el IVA de la marca (FACTOR_MARCA) en lugar del promedio: pedido del 5/11/2026.
 OBJETIVO_FIJO = {
     "FECOVITA": 25000, "L3N": 450000, "PEHUENIAS": 25000, "FUTURE BEVERAGES": 20000,
     "PILAGA": {"11": 300000, "7": 250000, "2": 200000, "10": 200000},   # Melanie Larrama, Ramiro Rando, Julian Nuñez y Matias Parada; el resto, el promedio
@@ -332,14 +333,15 @@ def fijar_objetivos(marcas, vend):
         if not filas or not m:
             continue
         dif = 0
+        f = FACTOR_MARCA.get(marca, IVA_DEFECTO)
         for r in filas:
-            obj = por_ven[r["ven"]] if por_ven else fijo
+            obj = round((por_ven[r["ven"]] if por_ven else fijo) * f)
             tot = next(t for t in vend if t["ven"] == r["ven"] and t["marca"] == "TOTAL")
             rehacer(tot, tot["objetivo"] - r["objetivo"] + obj)
             dif += obj - r["objetivo"]
             rehacer(r, obj)
         t = next(r for r in marcas if r["marca"] == "TOTAL")
-        nuevo = m["objetivo"] + dif if por_ven else fijo * len(filas)
+        nuevo = m["objetivo"] + dif if por_ven else round(fijo * f) * len(filas)
         rehacer(t, t["objetivo"] - m["objetivo"] + nuevo)
         rehacer(m, nuevo)
 
@@ -439,6 +441,13 @@ def main(args):
 
     (DIR / "meses").mkdir(parents=True, exist_ok=True)
     cargar_iva(meses)
+    por_marca = defaultdict(list)
+    for (c, _), a in arts.items():
+        if marca_base(a) and c in IVA:
+            por_marca[marca_base(a)].append(IVA[c])
+    for m, fs in por_marca.items():
+        FACTOR_MARCA[m] = max(set(fs), key=fs.count)
+    print("Factor de IVA por marca:", {m: FACTOR_MARCA.get(m) for m in OBJETIVO_FIJO})
     for ym in meses:
         datos = armar_mes(ym, hoy, arts, vendedores, datos_al)
         (DIR / "meses" / f"{ym}.json").write_text(json.dumps(datos, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
