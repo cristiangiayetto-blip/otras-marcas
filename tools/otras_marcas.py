@@ -85,7 +85,8 @@ IVA = {}                  # codigo de articulo -> factor total/neto
 IVA_DEFECTO = 1.21
 SIN_FACTOR = set()        # articulos sin factor conocido (control)
 FACTOR_MARCA = {}       # marca -> factor de IVA mas comun de sus articulos
-VENTAS = {}               # mes -> comprobantes de /api/ventas por fecha de carga (se bajan una vez por corrida)
+VENTAS = {}
+DIAG_ART = {}  # DIAG-LUCAS               # mes -> comprobantes de /api/ventas por fecha de carga (se bajan una vez por corrida)
 STOCK_DETALLE = {}   # {marca: [[codigo, descripcion, unidades]]}, todo lo que tiene stock > 0
 # Objetivo fijo de venta por vendedor (por mes). Se cargaron sin IVA: el script les suma el IVA de la marca (FACTOR_MARCA) en lugar del promedio: pedido del 5/11/2026.
 OBJETIVO_FIJO = {
@@ -149,6 +150,7 @@ def articulos():
     """(codigo, empresa) -> articulo de los proveedores del panel. La empresa 99 usa los de la 1."""
     arts = {}
     for a in base_get("/api/catalogo/articulos"):
+        DIAG_ART[(cod(a.get("codigo")), cod(a.get("codigoEmpresa")))] = (cod(a.get("codigoProveedor")), (a.get("descripcion") or "").strip())  # DIAG-LUCAS
         if cod(a.get("codigoProveedor")) in PROVEEDORES:
             arts[(cod(a.get("codigo")), cod(a.get("codigoEmpresa")))] = a
     return arts
@@ -252,6 +254,14 @@ def facturacion(ym, vendedores, arts):
             emp = cod(v.get("codigoEmpresa"))
             acc[(fecha, ven, emp)] += monto
             por_cli[(fecha, ven, cod(v.get("codigoCliente")))] += monto
+            if ven == "4" and fecha == "2026-11-05":  # DIAG-LUCAS
+                its = v.get("items") or []
+                print("DIAG-LUCAS comprobante", tipo, cod(v.get("numeroComprobante")), "total", v.get("importeTotal"),
+                      "suma renglones", round(sum(float(x.get("importeTotal") or 0) for x in its), 2))
+                for x in its:
+                    pv, ds = DIAG_ART.get((cod(x.get("codigoItem")), "1" if emp == "99" else emp)) or DIAG_ART.get((cod(x.get("codigoItem")), "1")) or ("?", "?")
+                    if pv not in ("100", "101") and pv not in PROVEEDORES:
+                        print("DIAG-LUCAS  otro", cod(x.get("codigoItem")), pv, ds, x.get("cantidad"), x.get("importeTotal"))
             for i in v.get("items") or []:
                 art = arts.get((cod(i.get("codigoItem")), "1" if emp == "99" else emp))
                 if art and marca_de(art):
