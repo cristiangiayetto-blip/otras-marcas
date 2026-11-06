@@ -67,13 +67,14 @@ SIN_TABLA = {"20", "31"}   # Deposito, FLOR
 # Pilaga S.A. (142) trae dos marcas: Pilaga y Adeco Agro. Solo se muestran las que tienen stock (ver ACTIVAS).
 MARCAS = ["SOFTYS", "ECOVITA", "LCB", "FECOVITA", "HARINAS CHACABUCO", "ENTRENUTS", "CASTELL", "EL CARMEN",
           "LAGOPUELO", "LA QUESERA", "L3N", "PILAGA", "ADECO AGRO", "PEHUENIAS", "MENOYO", "MORIXE",
-          "LA DELICIA", "ROFINA", "FUTURE BEVERAGES"]
+          "LA DELICIA", "ROFINA", "FUTURE BEVERAGES", "AZUCEL"]
 PROVEEDORES = {
     "142": None,              # PILAGA / ADECO AGRO, segun codigoMarca
     "517": "LCB", "10": "LAGOPUELO",    # 10 = Lagopuelo S.A. (Hileret), aparte de LCB (Tayal)
     "443": "SOFTYS", "351": "ECOVITA", "495": "FECOVITA", "359": "HARINAS CHACABUCO", "361": "ENTRENUTS",
     "547": "CASTELL", "594": "EL CARMEN", "94": "LA QUESERA", "141": "L3N", "589": "PEHUENIAS",
     "603": "MENOYO", "604": "MORIXE", "25": "LA DELICIA", "391": "ROFINA", "588": "FUTURE BEVERAGES",
+    "623": "AZUCEL",   # azucar Azucel, entro el 6/11/2026 (articulos 623xxxxx)
 }
 # Las de MARCAS que hoy tienen stock: se arma en main con la foto de stock de la base.
 ACTIVAS = set(MARCAS)
