@@ -78,6 +78,8 @@ PROVEEDORES = {
 # Las de MARCAS que hoy tienen stock: se arma en main con la foto de stock de la base.
 ACTIVAS = set(MARCAS)
 STOCK = {}
+PROV_ITEM = {}            # (codigo, empresa) -> proveedor, de todos los articulos
+SIN_FACT_COB = {"100", "101"}   # Pepsico y Georgalos: no van en la facturacion que muestra la Cobertura
 STOCK_DETALLE = {}   # {marca: [[codigo, descripcion, unidades]]}, todo lo que tiene stock > 0
 # Objetivo fijo de venta por vendedor (neto sin IVA, por mes) en lugar del promedio: pedido del 5/11/2026.
 OBJETIVO_FIJO = {
@@ -141,6 +143,7 @@ def articulos():
     """(codigo, empresa) -> articulo de los proveedores del panel. La empresa 99 usa los de la 1."""
     arts = {}
     for a in base_get("/api/catalogo/articulos"):
+        PROV_ITEM[(cod(a.get("codigo")), cod(a.get("codigoEmpresa")))] = cod(a.get("codigoProveedor"))
         if cod(a.get("codigoProveedor")) in PROVEEDORES:
             arts[(cod(a.get("codigo")), cod(a.get("codigoEmpresa")))] = a
     return arts
@@ -197,6 +200,7 @@ def facturacion(ym, vendedores):
     ult = calendar.monthrange(y, m)[1]
     acc = defaultdict(float)
     por_cli = defaultdict(float)   # (fecha, vendedor, cliente) -> total, para la cobertura
+    sin_pg = defaultdict(float)    # (fecha, vendedor) -> total sin los renglones de Pepsico y Georgalos
     # de a una semana: /api/ventas devuelve el JSON entero de cada comprobante
     for d1 in range(1, ult + 1, 7):
         desde, hasta = f"{ym}-{d1:02d}", f"{ym}-{min(d1 + 6, ult):02d}"
@@ -208,6 +212,13 @@ def facturacion(ym, vendedores):
                 monto = signo * float(v.get("importeTotal") or 0)
                 acc[(fecha, cod(v.get("codigoVendedor")), cod(v.get("codigoEmpresa")))] += monto
                 por_cli[(fecha, cod(v.get("codigoVendedor")), cod(v.get("codigoCliente")))] += monto
+                # parte del comprobante que no es Pepsico ni Georgalos, en proporcion a sus renglones
+                emp = cod(v.get("codigoEmpresa"))
+                items = v.get("items") or []
+                todo = sum(float(i.get("importeTotal") or 0) for i in items)
+                otros = sum(float(i.get("importeTotal") or 0) for i in items
+                            if PROV_ITEM.get((cod(i.get("codigoItem")), "1" if emp == "99" else emp)) not in SIN_FACT_COB)
+                sin_pg[(fecha, cod(v.get("codigoVendedor")))] += monto * (otros / todo if todo else 1)
     filas = [[f, ven, e, round(n)] for (f, ven, e), n in sorted(acc.items()) if round(n)]
     # clientes con compra neta de cualquier cosa, por dia de carga y vendedor
     clientes = defaultdict(dict)
@@ -219,7 +230,8 @@ def facturacion(ym, vendedores):
     for e in empresas:
         e["pct"] = round(e["total"] / total, 4) if total else None
     nombres = {ven: vendedores.get(ven) or f"Vendedor {ven}" for ven in sorted({f[1] for f in filas})}
-    return {"total": total, "empresas": empresas, "filas": filas, "nombres": nombres, "clientes": clientes}
+    sin_pg = [[f, ven, round(n)] for (f, ven), n in sorted(sin_pg.items()) if round(n)]
+    return {"total": total, "empresas": empresas, "filas": filas, "nombres": nombres, "clientes": clientes, "sin_pg": sin_pg}
 
 
 def cobertura_dia(ym, arts):
