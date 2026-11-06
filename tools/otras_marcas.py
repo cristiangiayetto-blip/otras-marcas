@@ -148,13 +148,7 @@ def submarca_de(art):
 def articulos():
     """(codigo, empresa) -> articulo de los proveedores del panel. La empresa 99 usa los de la 1."""
     arts = {}
-    for p in base_get("/api/catalogo/proveedores"):  # DIAG-AZUCEL
-        t = " ".join(str(v) for v in p.values() if isinstance(v, (str, int))).upper()
-        if "AZUC" in t:
-            print("DIAG-AZUCEL proveedor", p.get("codigo"), p.get("razonSocial"), p.get("nombre"), p.get("nombreFantasia"))
     for a in base_get("/api/catalogo/articulos"):
-        if "AZUC" in (a.get("descripcion") or "").upper():  # DIAG-AZUCEL
-            print("DIAG-AZUCEL articulo", a.get("codigo"), a.get("codigoEmpresa"), a.get("codigoProveedor"), a.get("codigoMarca"), a.get("descripcion"))
         if cod(a.get("codigoProveedor")) in PROVEEDORES:
             arts[(cod(a.get("codigo")), cod(a.get("codigoEmpresa")))] = a
     return arts
