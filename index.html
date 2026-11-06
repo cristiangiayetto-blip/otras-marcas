@@ -416,8 +416,10 @@ function vistaCobertura() {
   if (delPanel) delPanel.forEach(([f, ven, n]) => { if (enPerSet.has(f)) fact[ven] = (fact[ven] || 0) + n; });
   else ((datos.facturacion && datos.facturacion.filas) || []).forEach(([f, ven, , n]) => { if (enPerSet.has(f)) fact[ven] = (fact[ven] || 0) + n; });
   const nombres = (datos.facturacion && datos.facturacion.nombres) || {};
-  const vendedores = [...new Set([...Object.keys(fact), ...Object.keys(artVen)])]
-    .filter((ven) => !SIN_COB.includes(ven) && (fact[ven] > 0 || artVen[ven]))
+  // todos los vendedores que facturaron algo en el mes, aunque en este periodo no tengan venta
+  const delMes = ((datos.facturacion && datos.facturacion.filas) || []).map(([, ven]) => ven);
+  const vendedores = [...new Set([...delMes, ...Object.keys(fact), ...Object.keys(artVen)])]
+    .filter((ven) => !SIN_COB.includes(ven))
     .sort((a, b2) => (fact[b2] || 0) - (fact[a] || 0));
 
   // filtros: año, mes (el mismo de arriba), semana y dia
