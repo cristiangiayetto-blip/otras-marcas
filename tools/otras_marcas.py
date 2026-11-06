@@ -85,8 +85,7 @@ IVA = {}                  # codigo de articulo -> factor total/neto
 IVA_DEFECTO = 1.21
 SIN_FACTOR = set()        # articulos sin factor conocido (control)
 FACTOR_MARCA = {}       # marca -> factor de IVA mas comun de sus articulos
-VENTAS = {}
-DIAG_ART = {}  # DIAG-LUCAS               # mes -> comprobantes de /api/ventas por fecha de carga (se bajan una vez por corrida)
+VENTAS = {}               # mes -> comprobantes de /api/ventas por fecha de carga (se bajan una vez por corrida)
 STOCK_DETALLE = {}   # {marca: [[codigo, descripcion, unidades]]}, todo lo que tiene stock > 0
 # Objetivo fijo de venta por vendedor (por mes). Se cargaron sin IVA: el script les suma el IVA de la marca (FACTOR_MARCA) en lugar del promedio: pedido del 5/11/2026.
 OBJETIVO_FIJO = {
@@ -150,10 +149,16 @@ def articulos():
     """(codigo, empresa) -> articulo de los proveedores del panel. La empresa 99 usa los de la 1."""
     arts = {}
     for a in base_get("/api/catalogo/articulos"):
-        DIAG_ART[(cod(a.get("codigo")), cod(a.get("codigoEmpresa")))] = (cod(a.get("codigoProveedor")), (a.get("descripcion") or "").strip())  # DIAG-LUCAS
         if cod(a.get("codigoProveedor")) in PROVEEDORES:
             arts[(cod(a.get("codigo")), cod(a.get("codigoEmpresa")))] = a
     return arts
+
+
+def art_de(arts, item, emp):
+    """Articulo de un renglon: el de su empresa (la 99 usa la 1) y si no esta, el de la otra.
+    Hay articulos cargados en una sola empresa que se venden por las dos (o por la X)."""
+    c = cod(item)
+    return arts.get((c, "1" if emp == "99" else emp)) or arts.get((c, "1")) or arts.get((c, "2"))
 
 
 def mes_anterior(ym):
@@ -254,16 +259,8 @@ def facturacion(ym, vendedores, arts):
             emp = cod(v.get("codigoEmpresa"))
             acc[(fecha, ven, emp)] += monto
             por_cli[(fecha, ven, cod(v.get("codigoCliente")))] += monto
-            if ven == "4" and fecha == "2026-11-05":  # DIAG-LUCAS
-                its = v.get("items") or []
-                print("DIAG-LUCAS comprobante", tipo, cod(v.get("numeroComprobante")), "total", v.get("importeTotal"),
-                      "suma renglones", round(sum(float(x.get("importeTotal") or 0) for x in its), 2))
-                for x in its:
-                    pv, ds = DIAG_ART.get((cod(x.get("codigoItem")), "1" if emp == "99" else emp)) or DIAG_ART.get((cod(x.get("codigoItem")), "1")) or ("?", "?")
-                    if pv not in ("100", "101") and pv not in PROVEEDORES:
-                        print("DIAG-LUCAS  otro", cod(x.get("codigoItem")), pv, ds, x.get("cantidad"), x.get("importeTotal"))
             for i in v.get("items") or []:
-                art = arts.get((cod(i.get("codigoItem")), "1" if emp == "99" else emp))
+                art = art_de(arts, i.get("codigoItem"), emp)
                 if art and marca_de(art):
                     panel[(fecha, ven)] += signo * float(i.get("importeTotal") or 0)
     filas = [[f, ven, e, round(n)] for (f, ven, e), n in sorted(acc.items()) if round(n)]
@@ -291,7 +288,7 @@ def cobertura_dia(ym, arts):
     for prov in PROVEEDORES:
         for l in base_get("/api/lineas-proveedor", proveedor=prov, desde=desde, hasta=hasta, por="pedido"):
             emp = cod(l.get("emp"))
-            art = arts.get((cod(l.get("item")), "1" if emp == "99" else emp))
+            art = art_de(arts, l.get("item"), emp)
             fecha = (l.get("fp") or "")[:10]
             if not art or cod(art.get("codigoProveedor")) != prov or fecha[:7] != ym or not marca_de(art):
                 continue
@@ -368,7 +365,7 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
         for prov in PROVEEDORES:
             for l in base_get("/api/lineas-proveedor", proveedor=prov, desde=desde, hasta=hasta, por="entrega"):
                 emp = cod(l.get("emp"))
-                art = arts.get((cod(l.get("item")), "1" if emp == "99" else emp))
+                art = art_de(arts, l.get("item"), emp)
                 # el endpoint junta articulos por codigo sin empresa: se confirma el proveedor aca
                 if not art or cod(art.get("codigoProveedor")) != prov or not marca_de(art):
                     continue
