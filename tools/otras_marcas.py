@@ -150,6 +150,8 @@ def articulos():
     """(codigo, empresa) -> articulo de los proveedores del panel. La empresa 99 usa los de la 1."""
     arts = {}
     for a in base_get("/api/catalogo/articulos"):
+        if cod(a.get("codigoProveedor")) == "623":  # DIAG-COSTO
+            print("DIAG-COSTO articulo", json.dumps(a, ensure_ascii=False)[:1500])
         if cod(a.get("codigoProveedor")) in PROVEEDORES:
             arts[(cod(a.get("codigo")), cod(a.get("codigoEmpresa")))] = a
     return arts
@@ -251,6 +253,10 @@ def facturacion(ym, vendedores, arts):
     por_cli = defaultdict(float)   # (fecha, vendedor, cliente) -> total, para la cobertura
     panel = defaultdict(float)     # (fecha, vendedor) -> renglones de las marcas del panel
     for v in ventas_mes(ym):
+        for x in v.get("items") or []:  # DIAG-COSTO
+            if cod(x.get("codigoItem")).startswith("623"):
+                print("DIAG-COSTO renglon", v.get("codigoTipoVenta"), x.get("codigoItem"), "cant", x.get("cantidad"), "factor", x.get("unidadFactor"),
+                      "unidad", x.get("codigoUnidad"), "costo", x.get("precioCosto"), "precio", x.get("precioUnitario"), "neto", x.get("importeNeto"), "total", x.get("importeTotal"))
         tipo = cod(v.get("codigoTipoVenta"))
         signo = 1 if tipo in SUMAN else -1 if tipo.startswith("DEV") else 0
         fecha = (v.get("fechaPedido") or "")[:10]
