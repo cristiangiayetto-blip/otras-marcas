@@ -91,6 +91,8 @@ STOCK_DETALLE = {}   # {marca: [[codigo, descripcion, unidades]]}, todo lo que t
 # Objetivo fijo de venta por vendedor (por mes). Se cargaron sin IVA: el script les suma el IVA de la marca (FACTOR_MARCA) en lugar del promedio: pedido del 5/11/2026.
 OBJETIVO_FIJO = {
     "FECOVITA": 25000, "L3N": 450000, "PEHUENIAS": 25000, "FUTURE BEVERAGES": 20000,
+    # Azucel: el stock del 7/11/2026 al precio de compra ($ 31.228.095 sin IVA) repartido entre los 12 vendedores
+    "AZUCEL": 2602341,
     "PILAGA": {"11": 300000, "7": 250000, "2": 200000, "10": 200000},   # Melanie Larrama, Ramiro Rando, Julian Nuñez y Matias Parada; el resto, el promedio
     # Ramiro Rando, Agustin Pogorzelski, Camila Martinez, Melanie Larrama, Martinica Rodriguez, Ezequiel Hack y Maria Noelia Madia
     "ADECO AGRO": {"7": 250000, "12": 100000, "6": 120000, "11": 120000, "8": 100000, "3": 100000, "1": 100000},
@@ -150,8 +152,6 @@ def articulos():
     """(codigo, empresa) -> articulo de los proveedores del panel. La empresa 99 usa los de la 1."""
     arts = {}
     for a in base_get("/api/catalogo/articulos"):
-        if cod(a.get("codigoProveedor")) == "623":  # DIAG-COSTO
-            print("DIAG-COSTO articulo", json.dumps(a, ensure_ascii=False)[:1500])
         if cod(a.get("codigoProveedor")) in PROVEEDORES:
             arts[(cod(a.get("codigo")), cod(a.get("codigoEmpresa")))] = a
     return arts
@@ -253,10 +253,6 @@ def facturacion(ym, vendedores, arts):
     por_cli = defaultdict(float)   # (fecha, vendedor, cliente) -> total, para la cobertura
     panel = defaultdict(float)     # (fecha, vendedor) -> renglones de las marcas del panel
     for v in ventas_mes(ym):
-        for x in v.get("items") or []:  # DIAG-COSTO
-            if cod(x.get("codigoItem")).startswith("623"):
-                print("DIAG-COSTO renglon", v.get("codigoTipoVenta"), x.get("codigoItem"), "cant", x.get("cantidad"), "factor", x.get("unidadFactor"),
-                      "unidad", x.get("codigoUnidad"), "costo", x.get("precioCosto"), "precio", x.get("precioUnitario"), "neto", x.get("importeNeto"), "total", x.get("importeTotal"))
         tipo = cod(v.get("codigoTipoVenta"))
         signo = 1 if tipo in SUMAN else -1 if tipo.startswith("DEV") else 0
         fecha = (v.get("fechaPedido") or "")[:10]
