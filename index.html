@@ -129,6 +129,10 @@ tbody td.dia{text-align:left; font-family:"IBM Plex Sans"; font-weight:600}
 tbody td.dia::first-letter{text-transform:uppercase}
 tr.total td.dia{text-transform:uppercase; letter-spacing:.03em}
 .fact{min-width:820px}
+.fact tbody td{padding:5px 10px; font-size:12.5px}
+.fact td .pct{display:inline-block; min-width:42px; margin:0 0 0 8px; text-align:right}
+.fact thead tr.cols th{padding-top:10px; padding-bottom:8px}
+.fact .stack{height:6px; width:110px}
 td .pct{display:block; font-size:11px; color:var(--muted); margin-top:2px}
 .seg{display:flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--panel-2)}
 .seg button{font:600 13px "IBM Plex Sans"; color:var(--muted); background:transparent; border:0; padding:8px 14px; min-height:36px; cursor:pointer}
@@ -586,7 +590,7 @@ function vistaFacturacion() {
 
   // tabla: nombre | empresas (con su % de la fila) | total (con su % de la base) | reparto
   function tablaFact(primera, filas, base) {
-    const sc = el('div', 'table-scroll tall');
+    const sc = el('div', 'table-scroll');
     const t = el('table', 'fact');
     const th = el('thead'), hr = el('tr', 'cols');
     hr.append(el('th', 'name-col', primera));
@@ -629,7 +633,7 @@ function vistaFacturacion() {
   const ley = el('div', 'legend');
   emps.forEach((e) => { const s = el('span'); s.append(el('i', 'dot c-e' + e.emp), e.nombre); ley.append(s); });
   const hv = encabezado('Por vendedor · ' + (fPer ? nombrePeriodo(fPer, fAgr) : ''),
-    'Debajo de cada empresa, su % de lo que facturó el vendedor; debajo del total, su % del ' + (fAgr === 'semana' ? 'total de la semana' : nomAgr) + '. El total incluye lo cargado por Depósito.');
+    'Al lado de cada empresa, su % de lo que facturó el vendedor; al lado del total, su % del ' + (fAgr === 'semana' ? 'total de la semana' : nomAgr) + '. El total incluye lo cargado por Depósito.');
   hv.append(ley);
   v.replaceChildren(
     encabezado('Facturación por empresa', 'Todas las marcas, no solo estas: importe total con IVA, ventas menos devoluciones, por fecha de carga. Elegí si la querés ver por día, por semana o el mes entero.'),
