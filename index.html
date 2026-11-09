@@ -93,7 +93,9 @@ thead tr.grp th.g-a{color:var(--accent)}
 thead tr.cols th{font:600 11.5px "IBM Plex Sans"; color:var(--muted); text-align:right; padding:0 10px 10px; border-bottom:1px solid var(--border); white-space:nowrap; background:var(--panel)}
 .tall thead th{position:sticky; z-index:1}
 .tall thead tr.grp th{top:0}
-.tall thead tr.cols th{top:29px}
+.tall thead tr.cols th{top:0}
+.tall thead tr.grp + tr.cols th{top:29px}
+thead tr.cols:first-child th{padding-top:12px}
 thead tr.cols th.name-col{text-align:left}
 tbody td{padding:10px; text-align:right; border-bottom:1px solid var(--border); font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; white-space:nowrap}
 tbody td.name{text-align:left; font-family:"IBM Plex Sans"; font-weight:600}
