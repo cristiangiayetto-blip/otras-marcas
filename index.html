@@ -401,9 +401,70 @@ function vistaVendedor() {
   const tot = tots.find((d) => d.ven === venSel);
   const filas = datos.vendedores.filter((d) => d.ven === venSel && d.marca !== 'TOTAL' && activas().some(([k]) => k === d.marca))
     .map((d) => ({ nombre: DETALLE[d.marca] || NOMBRE[d.marca] || d.marca, d, onClick: () => abrir(d.marca) })).sort(porRendimiento);
+
+  // cobertura de articulos en el mes: surtido = articulos con stock hoy mas los vendidos en el mes
+  const ad = datos.articulos_dia || {};
+  const surt = {}, delVen = {};
+  const agregar = (obj, k, its) => { const x = obj[k] || (obj[k] = new Set()); its.forEach((i) => x.add(i)); };
+  Object.entries(datos.stock || {}).forEach(([m, its]) => agregar(surt, m, its));
+  Object.values(ad).forEach((vs) => Object.entries(vs).forEach(([ven, ms]) => {
+    if (SIN_COB.includes(ven) || Array.isArray(ms)) return;
+    Object.entries(ms).forEach(([m, its]) => { agregar(surt, m, its); if (ven === venSel) agregar(delVen, m, its); });
+  }));
+  const nivel = (p) => (p >= 0.5 ? 'good' : p >= 0.25 ? 'warn' : 'bad');
+  const celdaArt = (n, d) => {
+    const td = el('td');
+    if (!d) { td.textContent = '—'; td.className = 'na'; return td; }
+    td.append(el('span', n ? nivel(n / d) : 'bad', fPct(n / d)), el('span', 'na', `  ${n}/${d}`));
+    return td;
+  };
+  let nTot = 0, dTot = 0;
+  const sc = el('div', 'table-scroll');
+  const t = el('table', 'media');
+  const th = el('thead'), hr = el('tr', 'cols');
+  [['Marca', 'name-col'], ['Venta'], ['Tendencia de cierre'], ['Clientes con compra'], ['Cobertura de artículos']].forEach(([n, c]) => hr.append(el('th', c, n)));
+  th.append(hr);
+  const tb = el('tbody');
+  filas.forEach(({ nombre, d, onClick }) => {
+    const tr = el('tr', 'link');
+    tr.addEventListener('click', onClick);
+    const n = delVen[d.marca] ? delVen[d.marca].size : 0, dd = surt[d.marca] ? surt[d.marca].size : 0;
+    nTot += n; dTot += dd;
+    tr.append(el('td', 'name', nombre), el('td', null, money.format(d.venta)), el('td', null, money.format(tendencia(d))),
+      el('td', null, int.format(d.cob_act || 0)), celdaArt(n, dd));
+    tb.append(tr);
+  });
+  const trT = el('tr', 'total');
+  trT.append(el('td', 'name', 'Total'), el('td', null, money.format(tot.venta)), el('td', null, money.format(tendencia(tot))),
+    el('td', null, int.format(tot.cob_act || 0)), celdaArt(nTot, dTot));
+  tb.append(trT);
+  t.append(th, tb);
+  sc.append(t);
+
+  // facturacion del mes por empresa (todas las marcas)
+  const f = datos.facturacion;
+  const partesFact = [];
+  if (f && f.filas) {
+    const fv = sumar(f.filas.filter(([, ven]) => ven === venSel), () => 'mes').mes || { total: 0 };
+    const cards = el('div', 'kpis');
+    cards.append(kpi('Facturación total', money.format(fv.total), ['Tendencia de cierre ', b(money.format(tendencia({ venta: fv.total })))], 'accent'));
+    f.empresas.forEach((e) => {
+      const k = kpi(e.nombre, money.format(fv[e.emp] || 0), [fPct1(fv.total ? (fv[e.emp] || 0) / fv.total : null) + ' de lo que facturó']);
+      const bar = el('div', 'emp-bar');
+      const sp = el('span', 'c-e' + e.emp);
+      sp.style.width = (fv.total > 0 ? Math.max(0, Math.min(1, (fv[e.emp] || 0) / fv.total)) * 100 : 0) + '%';
+      bar.append(sp);
+      k.append(bar);
+      cards.append(k);
+    });
+    partesFact.push(encabezado('Facturación por empresa · ' + nombreMes(datos.mes),
+      'Todas las marcas, no solo estas: importe total con IVA, ventas menos devoluciones, por fecha de carga.'), cards);
+  }
+
   v.replaceChildren(ctl, kpis(tot),
-    encabezado('Por marca · ' + tot.vendedor, 'De mayor a menor venta. Tocá una marca para abrir su solapa.'),
-    tabla('Marca', [...filas, { nombre: 'Total', d: tot, cls: 'total' }], { vacio: 'Sin venta de estas marcas en el mes.' }));
+    encabezado('Por marca · ' + tot.vendedor, 'De mayor a menor venta. Clientes con compra: clientes distintos que le compraron la marca en el mes. Cobertura de artículos: de los artículos de la marca con más de 10 unidades en stock (más los vendidos en el mes), cuántos vendió. Tocá una marca para abrir su solapa.'),
+    filas.length ? sc : el('p', 'vacio', 'Sin venta de estas marcas en el mes.'),
+    ...partesFact);
 }
 
 // Cobertura de surtido: de los articulos distintos de cada marca que se vendieron en el periodo
