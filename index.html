@@ -181,9 +181,9 @@ tr.sel td{background:var(--accent-soft)}
 
   <section id="vista" aria-live="polite"></section>
 
-  <p class="foot-note">Venta: importe con IVA, por fecha de entrega, con las devoluciones restadas. Objetivo: el promedio mensual de lo vendido en los 3 meses anteriores (o los que haya en la base); la cobertura objetivo es el promedio de clientes por mes de esos meses.
+  <p class="foot-note">Venta: importe con IVA, por fecha de entrega, con las devoluciones restadas. Tendencia de cierre: la venta dividida por los días hábiles que van y multiplicada por los del mes, o sea lo que se vendería si se sigue al mismo ritmo.
     Cobertura (en su solapa): clientes con compra neta en el mes; el total cuenta cada cliente una sola vez aunque compre varias marcas.
-    Ritmo: días hábiles de lunes a sábado transcurridos sobre los del mes.
+    Días hábiles: de lunes a sábado.
     Facturación: todas las marcas, importe total con IVA, ventas y notas de débito menos devoluciones, por fecha de carga del pedido. Fuente: base propia de Gescom.</p>
 </div>
 
@@ -205,11 +205,13 @@ const DE_SLUG = Object.fromEntries(MARCAS.map(([k, , s]) => [s, k]));
 const OBJ_FIJO = { FECOVITA: 25000, L3N: 450000, PEHUENIAS: 25000, 'FUTURE BEVERAGES': 20000, AZUCEL: 2602341, PILAGA: { txt: 'Fijos: Melanie Larrama $ 300.000 + IVA, Ramiro Rando $ 250.000 + IVA, Julian Nuñez $ 200.000 + IVA y Matías Parada $ 200.000 + IVA.' },
   'ADECO AGRO': { txt: 'Fijos: Ramiro Rando $ 250.000 + IVA, Camila Martinez $ 120.000 + IVA, Melanie Larrama $ 120.000 + IVA, Agustín Pogorzelski $ 100.000 + IVA, Martinica Rodriguez $ 100.000 + IVA, Ezequiel Hack $ 100.000 + IVA y María Noelia Madia $ 100.000 + IVA.' } };   // igual que OBJETIVO_FIJO del script
 const DETALLE = { LCB: 'LCB (Tayal)', LAGOPUELO: 'Lagopuelo (Hileret)' };
-const FACT = 'FACTURACION', COB = 'COBERTURA';
+const FACT = 'FACTURACION', COB = 'COBERTURA', VEN = 'VENDEDOR';
 SLUG[FACT] = 'facturacion';
 DE_SLUG.facturacion = FACT;
 SLUG[COB] = 'cobertura';
 DE_SLUG.cobertura = COB;
+SLUG[VEN] = 'vendedor';
+DE_SLUG.vendedor = VEN;
 
 const money = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 const int = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 });
@@ -231,6 +233,8 @@ function estado(c, r) {
   return c >= r * 0.8 ? 'warn' : 'bad';
 }
 const ritmo = () => (datos && datos.habiles_mes ? Math.min(1, datos.habiles_hasta_hoy / datos.habiles_mes) : null);
+// Tendencia de cierre: la venta llevada al mes entero al ritmo de los dias habiles (mes cerrado: la venta)
+const tendencia = (d) => { const r = ritmo(); return r > 0 ? d.venta / r : d.venta; };
 const filaMarca = (m) => datos.marcas.find((r) => r.marca === m && r.sub === 'Total');
 
 function leerUrl() {
@@ -249,8 +253,8 @@ function escribirUrl() {
 function dibujarTabs() {
   const nav = document.getElementById('tabs');
   nav.replaceChildren();
-  [['resumen', 'Resumen'], [FACT, 'Facturación'], [COB, 'Cobertura']].concat(activas().map(([k, n]) => [k, n])).forEach(([k, n], i) => {
-    const b = el('button', 'tab' + (i === 2 ? ' first' : ''), n);
+  [['resumen', 'Resumen'], [VEN, 'Por vendedor'], [FACT, 'Facturación'], [COB, 'Cobertura']].concat(activas().map(([k, n]) => [k, n])).forEach(([k, n], i) => {
+    const b = el('button', 'tab' + (i === 3 ? ' first' : ''), n);
     b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(k === tab));
     b.addEventListener('click', () => { tab = k; escribirUrl(); dibujar(); b.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
@@ -278,8 +282,8 @@ function kpis(d, modo = 'venta') {
       conPill(kpi('Cumplimiento de cobertura', fPct(d.cumpl_cob), ['Ritmo a hoy ', b(fPct(r)), ' · faltan ', b(int.format(d.faltan_cli)), ' clientes']), d.cumpl_cob));
   } else {
     wrap.append(
-      kpi('Venta del mes', money.format(d.venta), ['Objetivo ', b(money.format(d.objetivo))], 'accent'),
-      conPill(kpi('Cumplimiento de venta', fPct(d.cumpl), ['Ritmo a hoy ', b(fPct(r)), ' · falta ', b(money.format(d.falta))]), d.cumpl));
+      kpi('Venta del mes', money.format(d.venta), ['Con ', b(`${datos.habiles_hasta_hoy} de ${datos.habiles_mes}`), ' días hábiles'], 'accent'),
+      kpi('Tendencia de cierre', money.format(tendencia(d)), [r < 1 ? 'Si sigue al ritmo de hoy' : 'Mes cerrado']));
   }
   return wrap;
 }
@@ -305,7 +309,7 @@ function tabla(primera, filas, opciones = {}) {
   const th = el('thead');
   const c = el('tr', 'cols');
   (cob ? [[primera, 'name-col'], ['Objetivo (clientes)'], ['Con compra'], ['Cumplimiento'], ['Faltan']]
-    : [[primera, 'name-col'], ['Objetivo'], ['Venta'], ['Cumplimiento'], ['Falta', 'hide-sm']]).forEach(([n, cls]) => c.append(el('th', cls, n)));
+    : [[primera, 'name-col'], ['Venta'], ['Tendencia de cierre']]).forEach(([n, cls]) => c.append(el('th', cls, n)));
   th.append(c);
   const tb = el('tbody');
   if (!filas.length) {
@@ -315,9 +319,9 @@ function tabla(primera, filas, opciones = {}) {
     const tr = el('tr', cls || '');
     if (onClick) { tr.classList.add('link'); tr.addEventListener('click', onClick); }
     const med = el('td');
-    med.append(medidor(cob ? d.cumpl_cob : d.cumpl, r));
+    if (cob) med.append(medidor(d.cumpl_cob, r));
     if (cob) tr.append(el('td', 'name', nombre), el('td', null, int.format(d.cob_obj)), el('td', null, int.format(d.cob_act)), med, el('td', null, int.format(d.faltan_cli)));
-    else tr.append(el('td', 'name', nombre), el('td', null, money.format(d.objetivo)), el('td', null, money.format(d.venta)), med, el('td', 'hide-sm', money.format(d.falta)));
+    else tr.append(el('td', 'name', nombre), el('td', null, money.format(d.venta)), el('td', null, money.format(tendencia(d))));
     tb.append(tr);
   });
   t.append(th, tb);
@@ -344,9 +348,8 @@ function encabezado(titulo, nota, conLeyenda) {
 
 const abrir = (m) => { tab = m; escribirUrl(); dibujar(); window.scrollTo({ top: document.getElementById('tabs').offsetTop - 8, behavior: 'smooth' }); };
 
-// Del que mejor viene al peor: cumplimiento de venta, despues venta y despues objetivo.
-const cumplDe = (d) => (d.cumpl == null ? (d.venta > 0 ? Infinity : -1) : d.cumpl);
-const porRendimiento = (a, b2) => cumplDe(b2.d) - cumplDe(a.d) || b2.d.venta - a.d.venta || b2.d.objetivo - a.d.objetivo;
+// De mayor a menor venta
+const porRendimiento = (a, b2) => b2.d.venta - a.d.venta;
 
 function vistaResumen() {
   const v = document.getElementById('vista');
@@ -357,10 +360,10 @@ function vistaResumen() {
       ...datos.marcas.filter((x) => x.marca === d.marca && x.sub !== 'Total').map((x) => ({ nombre: x.sub, d: x, cls: 'sub' })).sort(porRendimiento)] }))
     .sort(porRendimiento);
   const filas = [...grupos.flatMap((g) => g.filas), { nombre: 'Total otras marcas', d: total, cls: 'total' }];
-  const vend = datos.vendedores.filter((d) => d.marca === 'TOTAL').map((d) => ({ nombre: d.vendedor, d })).sort(porRendimiento);
+  const vend = datos.vendedores.filter((d) => d.marca === 'TOTAL').map((d) => ({ nombre: d.vendedor, d, onClick: () => { venSel = d.ven; abrir(VEN); } })).sort(porRendimiento);
   v.replaceChildren(kpis(total),
-    encabezado('Por marca', 'Tocá una marca para abrir su solapa. La cobertura está en su propia solapa.', true), tabla('Marca', filas),
-    encabezado('Por vendedor, todas las marcas', 'El objetivo de cada vendedor es su promedio mensual de estas marcas en ' + refTexto() + '.'),
+    encabezado('Por marca', 'Tocá una marca para abrir su solapa. La cobertura está en su propia solapa.'), tabla('Marca', filas),
+    encabezado('Por vendedor, todas las marcas', 'Tocá un vendedor para ver su detalle por marca.'),
     tabla('Vendedor', vend, { alto: true }));
 }
 
@@ -373,11 +376,34 @@ function vistaMarca(m) {
   h.style.margin = '0 0 14px';
   partes.push(h, kpis(d));
   const subs = datos.marcas.filter((x) => x.marca === m && x.sub !== 'Total').map((x) => ({ nombre: x.sub, d: x })).sort(porRendimiento);
-  if (subs.length) partes.push(encabezado('Por submarca', null, true), tabla('Submarca', [{ nombre: 'Total', d, cls: 'total' }, ...subs]));
+  if (subs.length) partes.push(encabezado('Por submarca'), tabla('Submarca', [{ nombre: 'Total', d, cls: 'total' }, ...subs]));
   const vend = datos.vendedores.filter((x) => x.marca === m).map((x) => ({ nombre: x.vendedor, d: x })).sort(porRendimiento);
-  partes.push(encabezado('Por vendedor', (typeof OBJ_FIJO[m] === 'number' ? `El objetivo es fijo: ${money.format(OBJ_FIJO[m])} más IVA por vendedor por mes; el de la marca es la suma.` : 'El objetivo de cada vendedor es su promedio mensual de la marca en ' + refTexto() + '.' + (OBJ_FIJO[m] ? ' ' + OBJ_FIJO[m].txt : '')) + ' Aparecen todos los vendedores, aunque no la vendan.', !subs.length),
+  partes.push(encabezado('Por vendedor', 'Aparecen todos los vendedores, aunque no la vendan.'),
     tabla('Vendedor', vend, { alto: true, vacio: 'No hay vendedores con venta en estos meses.' }));
   v.replaceChildren(...partes);
+}
+
+let venSel = null;
+function vistaVendedor() {
+  const v = document.getElementById('vista');
+  const tots = datos.vendedores.filter((d) => d.marca === 'TOTAL').sort((a, b2) => a.ven - b2.ven);
+  if (!tots.length) { v.replaceChildren(el('p', 'vacio', 'Todavía no hay ventas cargadas para este mes.')); return; }
+  if (!tots.some((d) => d.ven === venSel)) venSel = tots.slice().sort((a, b2) => b2.venta - a.venta)[0].ven;
+  const ctl = el('div', 'filtros');
+  const lab = el('label', null, 'Vendedor ');
+  const sel = el('select');
+  sel.setAttribute('aria-label', 'Vendedor');
+  tots.forEach((d) => sel.add(new Option(d.ven + ' - ' + d.vendedor, d.ven)));
+  sel.value = venSel;
+  sel.addEventListener('change', () => { venSel = sel.value; vistaVendedor(); });
+  lab.append(sel);
+  ctl.append(lab);
+  const tot = tots.find((d) => d.ven === venSel);
+  const filas = datos.vendedores.filter((d) => d.ven === venSel && d.marca !== 'TOTAL' && activas().some(([k]) => k === d.marca))
+    .map((d) => ({ nombre: DETALLE[d.marca] || NOMBRE[d.marca] || d.marca, d, onClick: () => abrir(d.marca) })).sort(porRendimiento);
+  v.replaceChildren(ctl, kpis(tot),
+    encabezado('Por marca · ' + tot.vendedor, 'De mayor a menor venta. Tocá una marca para abrir su solapa.'),
+    tabla('Marca', [...filas, { nombre: 'Total', d: tot, cls: 'total' }], { vacio: 'Sin venta de estas marcas en el mes.' }));
 }
 
 // Cobertura de surtido: de los articulos distintos de cada marca que se vendieron en el periodo
@@ -644,18 +670,17 @@ function vistaFacturacion() {
 
 function dibujar() {
   // si la solapa elegida es una marca que ya no se muestra (sin stock), se vuelve al resumen
-  if (datos && ![ 'resumen', FACT, COB ].includes(tab) && !activas().some(([k]) => k === tab)) tab = 'resumen';
+  if (datos && ![ 'resumen', VEN, FACT, COB ].includes(tab) && !activas().some(([k]) => k === tab)) tab = 'resumen';
   dibujarTabs();
   if (!datos) return;
   const hoy = new Date(datos.hoy + 'T12:00:00');
   document.getElementById('sub').replaceChildren(
-    'Venta de ', b(nombreMes(datos.mes)), ' contra el objetivo, que es el promedio mensual de ', b(refTexto()),
-    `. Van `, b(`${datos.habiles_hasta_hoy} de ${datos.habiles_mes}`), ' días hábiles del mes.');
+    'Venta de ', b(nombreMes(datos.mes)), ' y tendencia de cierre del mes. Van ', b(`${datos.habiles_hasta_hoy} de ${datos.habiles_mes}`), ' días hábiles.');
   const al = datos.datos_al ? new Date(datos.datos_al) : null;
   document.getElementById('estado').textContent = al
     ? 'Base Gescom al ' + al.toLocaleString('es-AR', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' })
     : '';
-  if (tab === 'resumen') vistaResumen(); else if (tab === FACT) vistaFacturacion(); else if (tab === COB) vistaCobertura(); else vistaMarca(tab);
+  if (tab === 'resumen') vistaResumen(); else if (tab === VEN) vistaVendedor(); else if (tab === FACT) vistaFacturacion(); else if (tab === COB) vistaCobertura(); else vistaMarca(tab);
 }
 
 async function cargarMes(ym) {
