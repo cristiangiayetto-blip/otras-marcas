@@ -430,6 +430,22 @@ def armar_mes(ym, hoy, arts, vendedores, datos_al):
     }
 
 
+def con_venta_en(meses, arts, marcas):
+    """De estas marcas, las que tienen alguna linea de venta en alguno de los meses."""
+    marcas = set(marcas)
+    provs = [p for p, m in PROVEEDORES.items() if m in marcas or (m is None and marcas & {"PILAGA", "ADECO AGRO"})]
+    hay = set()
+    for ym in meses:
+        y, mo = map(int, ym.split("-"))
+        desde, hasta = f"{ym}-01", f"{ym}-{calendar.monthrange(y, mo)[1]:02d}"
+        for prov in provs:
+            for l in base_get("/api/lineas-proveedor", proveedor=prov, desde=desde, hasta=hasta, por="entrega"):
+                art = art_de(arts, l.get("item"), cod(l.get("emp")))
+                if art and cod(art.get("codigoProveedor")) == prov and marca_base(art) in marcas:
+                    hay.add(marca_base(art))
+    return hay
+
+
 def main(args):
     if not os.environ.get("BASE_CLAVE", "").strip():
         print("Falta el secreto BASE_CLAVE: no se puede leer la base; se dejan los JSON anteriores sin tocar.")
@@ -444,7 +460,9 @@ def main(args):
     STOCK = stock_por_marca(arts)
     ACTIVAS.clear()
     ACTIVAS.update(m for m in MARCAS if STOCK.get(m))
-    print("Sin stock, no se muestran:", [m for m in MARCAS if m not in ACTIVAS] or "ninguna")
+    # una marca que se quedo sin stock pero ya vendio en el mes se sigue mostrando (si no, el total del mes baja de golpe)
+    ACTIVAS.update(con_venta_en(meses, arts, [m for m in MARCAS if m not in ACTIVAS]))
+    print("Sin stock ni venta, no se muestran:", [m for m in MARCAS if m not in ACTIVAS] or "ninguna")
     vendedores = {cod(v.get("codigo")): (v.get("nombre") or "").strip() for v in base_get("/api/catalogo/vendedores")}
     corridas = base_get("/api/estado").get("corridas") or []
     datos_al = max((c.get("inicio") or "" for c in corridas if c.get("estado") == "ok"), default=None)
